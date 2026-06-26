@@ -1,0 +1,161 @@
+/* ========== 主题 CSS 变量 ========== */
+:root {
+  --bg-body: #fff;
+  --bg-sidebar: #fafafa;
+  --bg-panel: #fff;
+  --bg-header: #fff;
+  --bg-card: #fff;
+  --bg-card-hover: #fafafa;
+  --bg-selected: #eef2ff;
+  --bg-meta: #fafafa;
+  --bg-input: #fff;
+  --bg-tooltip: #1f2937;
+  --bg-hover: #f5f5f5;
+
+  --border-light: #f0f0f0;
+  --border-normal: #e5e7eb;
+  --border-divider: #f5f5f5;
+
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --text-heading: #111827;
+  --text-muted: #9ca3af;
+
+  --accent: #6366f1;
+  --accent-light: #eef2ff;
+
+  --scrollbar-thumb: #d1d5db;
+  --scrollbar-thumb-hover: #9ca3af;
+}
+
+/* 暗色主题 */
+html[data-theme="dark"] {
+  --bg-body: #141414;
+  --bg-sidebar: #1f1f1f;
+  --bg-panel: #141414;
+  --bg-header: #1f1f1f;
+  --bg-card: #1f1f1f;
+  --bg-card-hover: #2d2d2d;
+  --bg-selected: #1a1a3e;
+  --bg-meta: #1a1a1a;
+  --bg-input: #2d2d2d;
+  --bg-tooltip: #333;
+  --bg-hover: #2d2d2d;
+
+  --border-light: #303030;
+  --border-normal: #333;
+  --border-divider: #2a2a2a;
+
+  --text-primary: #e5e5e5;
+  --text-secondary: #999;
+  --text-heading: #eee;
+  --text-muted: #666;
+
+  --accent: #818cf8;
+  --accent-light: #1e1b4b;
+
+  --scrollbar-thumb: #444;
+  --scrollbar-thumb-hover: #666;
+}
+
+/* ========== 全局样式 ========== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%; width: 100%; overflow: hidden;
+  font-size: 14px;
+  background: var(--bg-body);
+  color: var(--text-primary);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+/* 拖拽区域 */
+.drag-overlay {
+  position: fixed; inset: 0;
+  background: rgba(99, 102, 241, 0.08);
+  border: 3px dashed #6366f1;
+  z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; color: #6366f1;
+  pointer-events: none;
+}
+
+/* 搜索结果高亮 */
+.search-highlight { background: #fde68a; padding: 1px 2px; border-radius: 2px; }
+
+/* 文本标注高亮 */
+.preview-content mark.highlighted-text {
+  background: #fef08a; border-bottom: 2px solid #f59e0b;
+  cursor: pointer; padding: 1px 2px; border-radius: 2px; transition: background 0.15s;
+}
+.preview-content mark.highlighted-text:hover { background: #fde68a; border-bottom-color: #d97706; }
+.preview-content mark.highlighted-text[data-note]::after { content: ' 📎'; font-size: 10px; }
+
+/* 阅读模式 */
+.reading-mode { position: fixed !important; inset: 0 !important; z-index: 1000; background: var(--bg-body); }
+
+/* 代码块 */
+pre code { font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace; font-size: 13px; }
+
+/* 文本预览样式 */
+.preview-content { line-height: 1.8; color: var(--text-primary); }
+.preview-content h1, .preview-content h2, .preview-content h3,
+.preview-content h4, .preview-content h5, .preview-content h6 {
+  margin-top: 1.2em; margin-bottom: 0.6em; font-weight: 600; color: var(--text-heading);
+}
+.preview-content p { margin-bottom: 0.8em; }
+.preview-content img { max-width: 100%; border-radius: 4px; }
+.preview-content blockquote {
+  border-left: 3px solid var(--accent); padding-left: 1em; margin: 0.8em 0; color: var(--text-secondary);
+}
+.preview-content table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+.preview-content th, .preview-content td { border: 1px solid var(--border-normal); padding: 8px 12px; text-align: left; }
+.preview-content th { background: var(--bg-hover); font-weight: 600; }
+
+/* ========== Ant Design Tree 覆盖 ========== */
+.ant-tree {
+  background: transparent !important;
+}
+.ant-tree .ant-tree-node-content-wrapper {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+}
+.ant-tree .ant-tree-node-content-wrapper:hover {
+  background: var(--bg-hover) !important;
+}
+.ant-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
+  background: var(--bg-selected) !important;
+  color: var(--accent) !important;
+}
+.ant-tree .ant-tree-treenode {
+  padding: 1px 0;
+}
+.ant-tree .ant-tree-switcher {
+  color: var(--text-muted);
+}
+
+/* ========== 面板拖拽调整大小 ========== */
+.panel-resizer {
+  width: 4px; cursor: col-resize; background: transparent;
+  transition: background 0.15s; position: relative; z-index: 10;
+  flex-shrink: 0;
+}
+.panel-resizer:hover, .panel-resizer:active {
+  background: var(--accent);
+}
+
+/* ========== 条目拖拽排序 ========== */
+.draggable-item {
+  cursor: grab;
+  transition: opacity 0.15s, transform 0.15s;
+}
+.draggable-item:active { cursor: grabbing; }
+.draggable-item.dragging { opacity: 0.4; }
+.draggable-item.drag-over {
+  border-top: 2px solid var(--accent) !important;
+}

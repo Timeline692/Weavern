@@ -1,0 +1,12 @@
+node_modules/
+dist/
+release/
+*.db
+*.db-journal
+*.db-wal
+.DS_Store
+thumbs.db
+.claude/
+resources/
+src/**/*.js
+src/**/*.js.map

@@ -1,0 +1,64 @@
+{
+  "name": "weavern",
+  "version": "1.0.0",
+  "description": "织识 (Weavern) - 编织知识，织网识海。纯本地多模态知识库管理工具",
+  "main": "dist/main/main/index.js",
+  "scripts": {
+    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "vite build && tsc -p tsconfig.node.json",
+    "package": "npm run build && electron-builder",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.5.0",
+    "antd": "^5.22.0",
+    "cheerio": "^1.0.0",
+    "flexsearch": "^0.7.43",
+    "highlight.js": "^11.10.0",
+    "mammoth": "^1.8.0",
+    "marked": "^14.1.0",
+    "pdf-parse": "^1.1.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "sql.js": "^1.11.0",
+    "uuid": "^10.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/pdf-parse": "^1.1.4",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.weavern.app",
+    "productName": "织识",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "resources/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.png"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "resources/icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "resources/icon.png"
+    }
+  }
+}
