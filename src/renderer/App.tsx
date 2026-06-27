@@ -10,6 +10,8 @@ import { ItemList } from './components/ItemList';
 import { PreviewPanel } from './components/PreviewPanel';
 import { Toolbar } from './components/Toolbar';
 import { DragDropOverlay } from './components/DragDropOverlay';
+import { useVimKeybindings } from './hooks/useVimKeybindings';
+import { VimIndicator } from './components/VimIndicator';
 
 // 默认宽度和限制
 const DEFAULT_LEFT = 260;
@@ -20,7 +22,8 @@ const MAX_MID = 550;
 
 export default function App() {
   const { kbReady, kbConfig, setKbConfig, setKbReady, setCategories, setItems, setTags,
-    sidebarCollapsed, readingMode, globalLoading, setGlobalLoading } = useStore();
+    sidebarCollapsed, readingMode, globalLoading, setGlobalLoading,
+    setAutoStartEnabled } = useStore();
   const [initError, setInitError] = useState<string | null>(null);
   const [hasExistingConfig, setHasExistingConfig] = useState(false);
 
@@ -112,6 +115,17 @@ export default function App() {
     setItems(items);
     setTags(tags);
   };
+
+  // Vim 风格全键盘操作
+  useVimKeybindings(loadData);
+
+  // 加载开机自启动状态
+  useEffect(() => {
+    (async () => {
+      const enabled = await window.electronAPI.appGetAutoStart();
+      setAutoStartEnabled(enabled);
+    })();
+  }, []);
 
   // 导入完成
   useEffect(() => {
@@ -216,6 +230,7 @@ export default function App() {
           display: 'flex', alignItems: 'center', flexShrink: 0,
         }}>
           <Toolbar onDataChange={loadData} />
+          <VimIndicator />
         </div>
 
         {/* 三栏主体 */}

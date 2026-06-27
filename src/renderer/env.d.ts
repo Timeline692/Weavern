@@ -46,6 +46,8 @@ interface ElectronAPI {
   itemBatchCategorize: (ids: string[], categoryId: string | null) => Promise<void>;
   itemBatchTag: (ids: string[], tagId: string) => Promise<void>;
   importLocalizeImages: (itemId: string, baseUrl: string) => Promise<{success: boolean; error?: string}>;
+  appGetAutoStart: () => Promise<boolean>;
+  appSetAutoStart: (enabled: boolean) => Promise<boolean>;
 }
 
 declare global {

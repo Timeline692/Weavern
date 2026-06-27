@@ -71,4 +71,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   itemBatchTag: (ids: string[], tagId: string) => ipcRenderer.invoke('item:batch-tag', ids, tagId),
   // HTML 图片本地化
   importLocalizeImages: (itemId: string, baseUrl: string) => ipcRenderer.invoke('import:localize-images', itemId, baseUrl),
+  // 开机自启动
+  appGetAutoStart: () => ipcRenderer.invoke('app:get-auto-start'),
+  appSetAutoStart: (enabled: boolean) => ipcRenderer.invoke('app:set-auto-start', enabled),
 });

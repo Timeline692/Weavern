@@ -4,6 +4,7 @@
  */
 import { app, BrowserWindow, globalShortcut } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { registerIpcHandlers, setMainWindow } from './ipc-handlers';
 
 let mainWindow: BrowserWindow | null = null;
@@ -46,6 +47,15 @@ function createWindow(): void {
 // 应用就绪
 app.whenReady().then(() => {
   createWindow();
+
+  // 开机自启动（仅打包后生效，首次启动默认开启）
+  if (!isDev) {
+    const flagFile = path.join(app.getPath('userData'), '.auto-start-configured');
+    if (!fs.existsSync(flagFile)) {
+      app.setLoginItemSettings({ openAtLogin: true });
+      fs.writeFileSync(flagFile, '');
+    }
+  }
 
   // 注册全局快捷键：Ctrl+Shift+I 切换 DevTools（仅开发模式）
   if (isDev) {

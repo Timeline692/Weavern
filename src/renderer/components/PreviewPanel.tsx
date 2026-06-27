@@ -419,12 +419,24 @@ export function PreviewPanel({ onDataChange }: Props) {
     } catch (err: any) { message.error(err.message); }
   }, [selectedItemId]);
 
-  // Ctrl+S 保存监听
+  // Ctrl+S / Vim s 保存监听
   useEffect(() => {
     const handler = () => { if (editMode) handleSaveEdit(); };
     window.addEventListener('kb:save' as any, handler);
     return () => window.removeEventListener('kb:save' as any, handler);
   }, [editMode, handleSaveEdit]);
+
+  // Vim +/- 字号调整监听
+  useEffect(() => {
+    const inc = () => setFontSize(s => Math.min(32, s + 2));
+    const dec = () => setFontSize(s => Math.max(10, s - 2));
+    window.addEventListener('vim:font-inc' as any, inc);
+    window.addEventListener('vim:font-dec' as any, dec);
+    return () => {
+      window.removeEventListener('vim:font-inc' as any, inc);
+      window.removeEventListener('vim:font-dec' as any, dec);
+    };
+  }, []);
 
   // ========== 渲染 ==========
 

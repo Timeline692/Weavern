@@ -46,6 +46,12 @@ interface AppState {
   globalLoading: boolean;
   darkMode: boolean;
   newFileModalOpen: boolean;
+  autoStartEnabled: boolean;
+
+  // Vim 键位
+  vimPanelFocus: 'sidebar' | 'list' | 'preview';
+  vimMode: 'normal' | 'insert';
+  vimSearchIdx: number;
 
   // Actions
   setKbConfig: (config: KnowledgeBaseConfig | null) => void;
@@ -73,6 +79,10 @@ interface AppState {
   setGlobalLoading: (v: boolean) => void;
   toggleDarkMode: () => void;
   setNewFileModalOpen: (v: boolean) => void;
+  setAutoStartEnabled: (v: boolean) => void;
+  setVimPanelFocus: (f: 'sidebar' | 'list' | 'preview') => void;
+  setVimMode: (m: 'normal' | 'insert') => void;
+  setVimSearchIdx: (i: number) => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -98,6 +108,10 @@ export const useStore = create<AppState>((set, get) => ({
   globalLoading: false,
   darkMode: false,
   newFileModalOpen: false,
+  autoStartEnabled: false,
+  vimPanelFocus: 'list',
+  vimMode: 'normal',
+  vimSearchIdx: 0,
 
   setKbConfig: (config) => set({ kbConfig: config }),
   setKbReady: (ready) => set({ kbReady: ready }),
@@ -134,4 +148,8 @@ export const useStore = create<AppState>((set, get) => ({
   setGlobalLoading: (v) => set({ globalLoading: v }),
   toggleDarkMode: () => set(s => ({ darkMode: !s.darkMode })),
   setNewFileModalOpen: (v) => set({ newFileModalOpen: v }),
+  setAutoStartEnabled: (v) => set({ autoStartEnabled: v }),
+  setVimPanelFocus: (f) => set({ vimPanelFocus: f }),
+  setVimMode: (m) => set({ vimMode: m }),
+  setVimSearchIdx: (i) => set({ vimSearchIdx: i }),
 }));

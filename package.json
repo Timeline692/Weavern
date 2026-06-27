@@ -48,9 +48,23 @@
       "dist/**/*",
       "resources/**/*"
     ],
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "installerHeaderIcon": "resources/icon.ico",
+      "license": "LICENSE",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "织识 Weavern",
+      "displayLanguageSelector": false,
+      "deleteAppDataOnUninstall": false
+    },
     "win": {
       "target": "nsis",
-      "icon": "resources/icon.png"
+      "signAndEditExecutable": false
     },
     "mac": {
       "target": "dmg",

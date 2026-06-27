@@ -2,7 +2,7 @@
  * IPC 通信处理
  * 注册所有主进程 <-> 渲染进程的通信通道
  */
-import { ipcMain, dialog, BrowserWindow, shell } from 'electron';
+import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuid } from 'uuid';
@@ -224,6 +224,15 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('shell:open-path', async (_e, filePath: string) => {
     return shell.openPath(filePath);
+  });
+
+  // ========== 开机自启动 ==========
+  ipcMain.handle('app:get-auto-start', async () => {
+    return app.getLoginItemSettings().openAtLogin;
+  });
+  ipcMain.handle('app:set-auto-start', async (_e, enabled: boolean) => {
+    app.setLoginItemSettings({ openAtLogin: enabled });
+    return enabled;
   });
 
   // ========== 新建文件 ==========
