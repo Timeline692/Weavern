@@ -101,7 +101,6 @@ src/
 ```
 
 ## 本项目由 Vibe Coding 方式开发 —— 能工智人提供创意
-
 ## 许可
 
 MIT License
