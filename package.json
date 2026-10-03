@@ -1,6 +1,6 @@
 {
   "name": "weavern",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "织识 (Weavern) - 编织知识，织网识海。纯本地多模态知识库管理工具",
   "main": "dist/main/main/index.js",
   "scripts": {
