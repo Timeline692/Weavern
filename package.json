@@ -69,14 +69,17 @@
     },
     "win": {
       "target": "nsis",
+      "artifactName": "Weavern-Setup-${version}.${ext}",
       "signAndEditExecutable": false
     },
     "mac": {
       "target": "dmg",
+      "artifactName": "Weavern-${version}-${arch}.${ext}",
       "icon": "resources/icon.png"
     },
     "linux": {
       "target": "AppImage",
+      "artifactName": "Weavern-${version}-${arch}.${ext}",
       "icon": "resources/icon.png"
     }
   }
