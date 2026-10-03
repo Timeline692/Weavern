@@ -2,9 +2,9 @@
  * Zustand 全局状态管理
  */
 import { create } from 'zustand';
-import type { Item, Category, Tag, Annotation, SearchResult, KnowledgeBaseConfig } from '../shared/types';
+import type { Item, Category, Tag, Annotation, SearchResult, KnowledgeBaseConfig, ItemSort } from '../shared/types';
 
-export type ItemSort = 'updated' | 'name' | 'date' | 'size' | 'type';
+export type { ItemSort } from '../shared/types';
 
 interface AppState {
   // 知识库
@@ -64,7 +64,8 @@ interface AppState {
   setItemSort: (sort: ItemSort) => void;
   toggleBatchMode: () => void;
   toggleItemSelection: (id: string) => void;
-  selectAllItems: () => void;
+  selectAllItems: (ids?: string[]) => void;
+  resetKnowledgeBaseView: () => void;
   clearSelection: () => void;
   setStarredFilter: (v: boolean) => void;
   setTags: (tags: Tag[]) => void;
@@ -116,7 +117,7 @@ export const useStore = create<AppState>((set, get) => ({
   setKbConfig: (config) => set({ kbConfig: config }),
   setKbReady: (ready) => set({ kbReady: ready }),
   setCategories: (cats) => set({ categories: cats }),
-  setSelectedCategoryId: (id) => set({ selectedCategoryId: id, selectedTagId: null, searchResults: null, searchQuery: '' }),
+  setSelectedCategoryId: (id) => set({ selectedCategoryId: id, selectedTagId: null, starredFilter: false, searchResults: null, searchQuery: '' }),
   setItems: (items) => set({ items }),
   setSelectedItemId: (id) => set({ selectedItemId: id }),
   setViewMode: (mode) => set({ viewMode: mode }),
@@ -127,14 +128,15 @@ export const useStore = create<AppState>((set, get) => ({
     if (next.has(id)) next.delete(id); else next.add(id);
     set({ selectedItemIds: next });
   },
-  selectAllItems: () => {
-    const all = new Set(get().items.map(i => i.id));
+  selectAllItems: (ids) => {
+    const all = new Set(ids ?? get().items.map(i => i.id));
     set({ selectedItemIds: all });
   },
+  resetKnowledgeBaseView: () => set({ categories: [], items: [], tags: [], annotations: [], selectedCategoryId: null, selectedTagId: null, selectedItemId: null, selectedItemIds: new Set(), batchMode: false, starredFilter: false, searchQuery: '', searchResults: null, readingMode: false }),
   clearSelection: () => set({ selectedItemIds: new Set() }),
   setStarredFilter: (v) => set({ starredFilter: v, selectedCategoryId: null, selectedTagId: null, searchResults: null, searchQuery: '' }),
   setTags: (tags) => set({ tags }),
-  setSelectedTagId: (id) => set({ selectedTagId: id, selectedCategoryId: null, searchResults: null, searchQuery: '' }),
+  setSelectedTagId: (id) => set({ selectedTagId: id, selectedCategoryId: null, starredFilter: false, searchResults: null, searchQuery: '' }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setSearchResults: (results) => set({ searchResults: results }),
   addSearchHistory: (q) => {

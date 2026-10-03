@@ -7,6 +7,5 @@ release/
 .DS_Store
 thumbs.db
 .claude/
-resources/
 src/**/*.js
 src/**/*.js.map

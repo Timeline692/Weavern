@@ -13,21 +13,26 @@ import type {
 let db: SqlJsDatabase;
 let SQL: SqlJsStatic;
 let dbPath: string;
+let initialization: Promise<void> = Promise.resolve();
 
 // ========== 初始化 ==========
 
-export async function initDatabase(rootPath: string): Promise<void> {
-  SQL = await initSqlJs();
-  dbPath = path.join(rootPath, 'knowledge.db');
-  if (fs.existsSync(dbPath)) {
-    const buffer = fs.readFileSync(dbPath);
-    db = new SQL.Database(buffer);
-  } else {
-    db = new SQL.Database();
-  }
-  db.run('PRAGMA foreign_keys = ON');
-  createTables();
-  save();
+export function initDatabase(rootPath: string): Promise<void> {
+  const nextPath = path.join(rootPath, 'knowledge.db');
+  initialization = initialization.catch(() => {}).then(async () => {
+    if (db && dbPath === nextPath) return;
+    const sql = SQL || await initSqlJs();
+    const nextDb = fs.existsSync(nextPath)
+      ? new sql.Database(fs.readFileSync(nextPath)) : new sql.Database();
+    if (db) closeDatabase();
+    SQL = sql;
+    db = nextDb;
+    dbPath = nextPath;
+    db.run('PRAGMA foreign_keys = ON');
+    createTables();
+    save();
+  });
+  return initialization;
 }
 
 function save(): void {
@@ -84,9 +89,14 @@ function createTables(): void {
     file_type TEXT NOT NULL DEFAULT 'other', size INTEGER NOT NULL DEFAULT 0,
     preview_text TEXT DEFAULT '', category_id TEXT,
     is_starred INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))`);
   try { db.run('ALTER TABLE items ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0'); } catch { /* ok */ }
+  try {
+    db.run('ALTER TABLE items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+    db.run('UPDATE items SET sort_order = (SELECT COUNT(*) FROM items older WHERE older.rowid <= items.rowid)');
+  } catch { /* 已迁移 */ }
   db.run('CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE)');
   db.run('CREATE TABLE IF NOT EXISTS item_tags (item_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY (item_id, tag_id))');
   db.run(`CREATE TABLE IF NOT EXISTS annotations (
@@ -122,24 +132,27 @@ export function moveCategory(id: string, parentId: string | null, order: number)
 // ========== 条目 CRUD ==========
 
 export function getItems(categoryId?: string): Item[] {
+  const columns = 'id, title, file_path, original_url, source_type, file_type, size, SUBSTR(preview_text, 1, 500) AS preview_text, category_id, is_starred, sort_order, created_at, updated_at';
   return categoryId
-    ? queryAll('SELECT * FROM items WHERE category_id = ? ORDER BY updated_at DESC', [categoryId])
-    : queryAll('SELECT * FROM items ORDER BY updated_at DESC');
+    ? queryAll(`SELECT ${columns} FROM items WHERE category_id = ? ORDER BY updated_at DESC`, [categoryId])
+    : queryAll(`SELECT ${columns} FROM items ORDER BY updated_at DESC`);
 }
 
 export function getItem(id: string): Item | null { return queryOne('SELECT * FROM items WHERE id = ?', [id]); }
 
 export function createItem(data: CreateItemInput): Item {
   const id = uuid();
-  execute(`INSERT INTO items (id, title, file_path, original_url, source_type, file_type, size, preview_text, category_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, data.title, data.file_path, data.original_url || '', data.source_type, data.file_type, data.size, data.preview_text, data.category_id || null]);
+  const next = queryOne<{ value: number }>('SELECT COALESCE(MAX(sort_order), -1) + 1 AS value FROM items')?.value ?? 0;
+  execute(`INSERT INTO items (id, title, file_path, original_url, source_type, file_type, size, preview_text, category_id, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, data.title, data.file_path, data.original_url || '', data.source_type, data.file_type, data.size, data.preview_text, data.category_id || null, next]);
   return queryOne<Item>('SELECT * FROM items WHERE id = ?', [id])!;
 }
 
 export function updateItem(id: string, data: Partial<Item>): void {
   const fields: string[] = []; const values: unknown[] = [];
-  for (const [key, value] of Object.entries(data)) { if (key === 'id') continue; fields.push(`${key} = ?`); values.push(value); }
+  const allowed = new Set(['title', 'category_id', 'is_starred', 'preview_text', 'size', 'file_path']);
+  for (const [key, value] of Object.entries(data)) { if (!allowed.has(key)) continue; fields.push(`${key} = ?`); values.push(value); }
   if (!fields.length) return;
   fields.push("updated_at = datetime('now', 'localtime')"); values.push(id);
   execute(`UPDATE items SET ${fields.join(', ')} WHERE id = ?`, values);
@@ -148,6 +161,8 @@ export function updateItem(id: string, data: Partial<Item>): void {
 export function deleteItem(id: string): void {
   const item = getItem(id);
   if (item) { const p = getMediaPath(item.file_path); if (fs.existsSync(p)) fs.unlinkSync(p); }
+  db.run('DELETE FROM item_tags WHERE item_id = ?', [id]);
+  db.run('DELETE FROM annotations WHERE item_id = ?', [id]);
   execute('DELETE FROM items WHERE id = ?', [id]);
 }
 
@@ -165,12 +180,49 @@ export function getStarredItems(): Item[] { return queryAll('SELECT * FROM items
 
 // ========== 批量操作 ==========
 
-export function batchDeleteItems(ids: string[]): void { ids.forEach(id => deleteItem(id)); }
+export function batchDeleteItems(ids: string[]): void {
+  const unique = [...new Set(ids)];
+  const paths = unique.map(id => getItem(id)).filter((item): item is Item => !!item).map(item => getMediaPath(item.file_path));
+  db.run('BEGIN');
+  try {
+    unique.forEach(id => {
+      db.run('DELETE FROM item_tags WHERE item_id = ?', [id]);
+      db.run('DELETE FROM annotations WHERE item_id = ?', [id]);
+      db.run('DELETE FROM items WHERE id = ?', [id]);
+    });
+    db.run('COMMIT');
+    save();
+  } catch (error) { db.run('ROLLBACK'); throw error; }
+  paths.forEach(filePath => { try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (error) { console.error('Failed to remove media:', error); } });
+}
 export function batchCategorize(ids: string[], categoryId: string | null): void {
-  ids.forEach(id => execute("UPDATE items SET category_id = ?, updated_at = datetime('now', 'localtime') WHERE id = ?", [categoryId, id]));
+  db.run('BEGIN');
+  try {
+    ids.forEach(id => db.run("UPDATE items SET category_id = ?, updated_at = datetime('now', 'localtime') WHERE id = ?", [categoryId, id]));
+    db.run('COMMIT'); save();
+  } catch (error) { db.run('ROLLBACK'); throw error; }
 }
 export function batchTag(ids: string[], tagId: string): void {
-  ids.forEach(id => execute('INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?, ?)', [id, tagId]));
+  db.run('BEGIN');
+  try {
+    ids.forEach(id => db.run('INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?, ?)', [id, tagId]));
+    db.run('COMMIT'); save();
+  } catch (error) { db.run('ROLLBACK'); throw error; }
+}
+
+export function reorderItems(orderedIds: string[]): void {
+  const unique = [...new Set(orderedIds)];
+  const all = queryAll<{ id: string }>('SELECT id FROM items ORDER BY sort_order, rowid').map(row => row.id);
+  const selected = new Set(unique);
+  if (unique.some(id => !all.includes(id))) throw new Error('条目列表已变化，请刷新后重试');
+  let cursor = 0;
+  const merged = all.map(id => selected.has(id) ? unique[cursor++] : id);
+  db.run('BEGIN');
+  try {
+    merged.forEach((id, order) => db.run('UPDATE items SET sort_order = ? WHERE id = ?', [order, id]));
+    db.run('COMMIT');
+    save();
+  } catch (error) { db.run('ROLLBACK'); throw error; }
 }
 
 // ========== 标签 CRUD ==========
@@ -182,7 +234,7 @@ export function createTag(name: string): Tag {
   return queryOne<Tag>('SELECT * FROM tags WHERE name = ?', [name]) || { id, name };
 }
 
-export function deleteTag(id: string): void { execute('DELETE FROM tags WHERE id = ?', [id]); }
+export function deleteTag(id: string): void { db.run('DELETE FROM item_tags WHERE tag_id = ?', [id]); execute('DELETE FROM tags WHERE id = ?', [id]); }
 export function addTagToItem(iid: string, tid: string): void { execute('INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?, ?)', [iid, tid]); }
 export function removeTagFromItem(iid: string, tid: string): void { execute('DELETE FROM item_tags WHERE item_id = ? AND tag_id = ?', [iid, tid]); }
 export function getTagsForItem(iid: string): Tag[] { return queryAll('SELECT t.* FROM tags t JOIN item_tags it ON t.id = it.tag_id WHERE it.item_id = ? ORDER BY t.name', [iid]); }
@@ -192,10 +244,10 @@ export function getTagsForItem(iid: string): Tag[] { return queryAll('SELECT t.*
 export function searchItems(query: string, filters?: SearchFilters): SearchResult[] {
   const terms = query.trim().split(/\s+/).filter(Boolean);
   if (!terms.length) return [];
-  const likeClauses = terms.map(() => '(title LIKE ? OR preview_text LIKE ?)');
+  const likeClauses = terms.map(() => "(title LIKE ? ESCAPE '\\' OR preview_text LIKE ? ESCAPE '\\')");
   let sql = `SELECT * FROM items WHERE ${likeClauses.join(' AND ')}`;
   const params: unknown[] = [];
-  terms.forEach(t => { params.push(`%${t}%`, `%${t}%`); });
+  terms.forEach(t => { const escaped = t.replace(/[\\%_]/g, '\\$&'); params.push(`%${escaped}%`, `%${escaped}%`); });
   if (filters?.categoryId) { sql += ' AND category_id = ?'; params.push(filters.categoryId); }
   if (filters?.fileTypes?.length) { sql += ` AND file_type IN (${filters.fileTypes.map(() => '?').join(',')})`; params.push(...filters.fileTypes); }
   sql += ' ORDER BY updated_at DESC LIMIT 50';
@@ -209,9 +261,10 @@ export function searchItems(query: string, filters?: SearchFilters): SearchResul
 }
 
 function highlightTerms(text: string, terms: string[]): string {
-  let r = text;
-  terms.forEach(t => { r = r.replace(new RegExp(`(${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'), '<mark>$1</mark>'); });
-  return r;
+  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const sorted = [...terms].sort((a, b) => b.length - a.length);
+  const matcher = new RegExp(sorted.map(term => term.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
+  return escaped.replace(matcher, match => `<mark>${match}</mark>`);
 }
 
 export function searchByTag(tagId: string): Item[] {
@@ -237,7 +290,12 @@ let knowledgeBaseRoot: string = '';
 
 export function setKnowledgeBaseRoot(root: string): void { knowledgeBaseRoot = root; }
 export function getKnowledgeBaseRoot(): string { return knowledgeBaseRoot; }
-export function getMediaPath(relativePath: string): string { return path.join(knowledgeBaseRoot, '_media', relativePath); }
+export function getMediaPath(relativePath: string): string {
+  const mediaRoot = path.resolve(knowledgeBaseRoot, '_media');
+  const resolved = path.resolve(mediaRoot, relativePath);
+  if (!knowledgeBaseRoot || !resolved.startsWith(mediaRoot + path.sep)) throw new Error('无效的媒体文件路径');
+  return resolved;
+}
 export function ensureMediaDir(): void {
   const dir = path.join(knowledgeBaseRoot, '_media');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

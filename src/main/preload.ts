@@ -32,8 +32,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 导入
   importFiles: (paths: string[]) => ipcRenderer.invoke('import:files', paths),
   importClipboard: (data: any) => ipcRenderer.invoke('import:clipboard', data),
+  importUrlDetect: (url: string) => ipcRenderer.invoke('import:url-detect', url),
+  importUrl: (url: string, title?: string) => ipcRenderer.invoke('import:url', url, title),
   onImportComplete: (callback: (results: any[]) => void) => {
-    ipcRenderer.on('import:complete', (_e, results) => callback(results));
+    const listener = (_e: Electron.IpcRendererEvent, results: any[]) => callback(results);
+    ipcRenderer.on('import:complete', listener);
+    return () => ipcRenderer.removeListener('import:complete', listener);
   },
 
   // 标签
@@ -69,6 +73,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   itemBatchDelete: (ids: string[]) => ipcRenderer.invoke('item:batch-delete', ids),
   itemBatchCategorize: (ids: string[], categoryId: string | null) => ipcRenderer.invoke('item:batch-categorize', ids, categoryId),
   itemBatchTag: (ids: string[], tagId: string) => ipcRenderer.invoke('item:batch-tag', ids, tagId),
+  itemReorder: (ids: string[]) => ipcRenderer.invoke('item:reorder', ids),
   // HTML 图片本地化
   importLocalizeImages: (itemId: string, baseUrl: string) => ipcRenderer.invoke('import:localize-images', itemId, baseUrl),
   // 开机自启动

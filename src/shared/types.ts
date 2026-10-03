@@ -20,12 +20,15 @@ export interface Item {
   size: number;             // 字节
   preview_text: string;     // 可搜索的纯文本内容
   category_id: string | null;
+  is_starred: number;
+  sort_order: number;
   created_at: string;
   updated_at: string;
 }
 
 export type SourceType = 'local' | 'url' | 'clipboard';
-export type FileType = 'txt' | 'md' | 'html' | 'docx' | 'pdf' | 'jpg' | 'png' | 'gif' | 'webp' | 'mp4' | 'mov' | 'mkv' | 'other';
+export type FileType = 'txt' | 'md' | 'html' | 'docx' | 'pdf' | 'jpg' | 'png' | 'gif' | 'webp' | 'bmp' | 'svg' | 'mp4' | 'mov' | 'mkv' | 'webm' | 'other';
+export type ItemSort = 'updated' | 'manual' | 'name' | 'date' | 'size' | 'type';
 
 /** 标签 */
 export interface Tag {

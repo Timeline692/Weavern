@@ -1,22 +1,17 @@
 /**
  * 拖拽导入遮罩层
- * 使用 ref 保持回调稳定，避免 React 重渲染打断事件监听
+ * 文件导入完成后由主进程事件统一刷新条目
  */
 import React, { useEffect, useState, useRef } from 'react';
 
 interface Props {
   children: React.ReactNode;
-  onImportComplete: () => void;
 }
 
-export function DragDropOverlay({ children, onImportComplete }: Props) {
+export function DragDropOverlay({ children }: Props) {
   const [isDragging, setIsDragging] = useState(false);
   const [importing, setImporting] = useState(false);
   const dragCounter = useRef(0);
-
-  // 用 ref 保存最新回调，避免 effect 依赖变化
-  const onImportCompleteRef = useRef(onImportComplete);
-  onImportCompleteRef.current = onImportComplete;
 
   useEffect(() => {
     /** 判断是否是从文件系统拖入的真实文件（排除内部拖拽排序） */
@@ -86,7 +81,6 @@ export function DragDropOverlay({ children, onImportComplete }: Props) {
         setImporting(true);
         try {
           await window.electronAPI.importFiles(filePaths);
-          onImportCompleteRef.current();
         } catch (err) {
           console.error('Import failed:', err);
         } finally {
@@ -112,7 +106,6 @@ export function DragDropOverlay({ children, onImportComplete }: Props) {
           reader.onload = async () => {
             try {
               await window.electronAPI.importClipboard({ type: 'image', imageBase64: reader.result as string });
-              onImportCompleteRef.current();
             } catch (err) { console.error('Paste image failed:', err); }
           };
           reader.readAsDataURL(blob);
@@ -122,7 +115,6 @@ export function DragDropOverlay({ children, onImportComplete }: Props) {
             if (text.trim().length > 10) {
               try {
                 await window.electronAPI.importClipboard({ type: 'text', text });
-                onImportCompleteRef.current();
               } catch (err) { console.error('Paste text failed:', err); }
             }
           });

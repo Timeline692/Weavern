@@ -14,16 +14,16 @@ export function VimIndicator() {
   const { vimMode, vimPanelFocus } = useStore();
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
-      opacity: 0.7, userSelect: 'none',
+    <div className="vim-indicator" style={{
+      display: 'flex', alignItems: 'center', gap: 5, marginLeft: 6,
+      userSelect: 'none',
     }}>
       {/* 模式指示 */}
       <span style={{
-        fontSize: 10, fontWeight: 900, letterSpacing: 1,
-        padding: '1px 5px', borderRadius: 3,
-        background: vimMode === 'normal' ? '#10b981' : '#3b82f6',
-        color: '#fff', fontFamily: 'monospace',
+        fontSize: 10, fontWeight: 700, letterSpacing: 1,
+        padding: '1px 4px', borderRadius: 2,
+        border: '1px solid var(--border-normal)',
+        color: 'var(--accent)', fontFamily: 'monospace',
       }}>
         {vimMode === 'normal' ? 'N' : 'I'}
       </span>

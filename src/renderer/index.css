@@ -1,61 +1,65 @@
 /* ========== 主题 CSS 变量 ========== */
 :root {
-  --bg-body: #fff;
-  --bg-sidebar: #fafafa;
-  --bg-panel: #fff;
-  --bg-header: #fff;
-  --bg-card: #fff;
-  --bg-card-hover: #fafafa;
-  --bg-selected: #eef2ff;
-  --bg-meta: #fafafa;
-  --bg-input: #fff;
-  --bg-tooltip: #1f2937;
-  --bg-hover: #f5f5f5;
+  --bg-body: #f7f5f0;
+  --bg-sidebar: #f2efe9;
+  --bg-panel: #faf8f4;
+  --bg-header: #faf8f4;
+  --bg-card: #faf8f4;
+  --bg-card-hover: #f4f1eb;
+  --bg-selected: #e9f1ef;
+  --bg-meta: #f3f0e9;
+  --bg-input: #fffdfa;
+  --bg-tooltip: #142630;
+  --bg-hover: #ebe9e2;
 
-  --border-light: #f0f0f0;
-  --border-normal: #e5e7eb;
-  --border-divider: #f5f5f5;
+  --border-light: #dfded6;
+  --border-normal: #d1d2cc;
+  --border-divider: #e6e4dd;
 
-  --text-primary: #1f2937;
-  --text-secondary: #6b7280;
-  --text-heading: #111827;
-  --text-muted: #9ca3af;
+  --text-primary: #20333c;
+  --text-secondary: #60717a;
+  --text-heading: #142630;
+  --text-muted: #849198;
 
-  --accent: #6366f1;
-  --accent-light: #eef2ff;
+  --accent: #126d82;
+  --accent-light: #e4eff0;
+  --brand: #b92843;
+  --gold: #c89542;
 
-  --scrollbar-thumb: #d1d5db;
-  --scrollbar-thumb-hover: #9ca3af;
+  --scrollbar-thumb: #c7c9c3;
+  --scrollbar-thumb-hover: #a5aaa7;
 }
 
 /* 暗色主题 */
 html[data-theme="dark"] {
-  --bg-body: #141414;
-  --bg-sidebar: #1f1f1f;
-  --bg-panel: #141414;
-  --bg-header: #1f1f1f;
-  --bg-card: #1f1f1f;
-  --bg-card-hover: #2d2d2d;
-  --bg-selected: #1a1a3e;
-  --bg-meta: #1a1a1a;
-  --bg-input: #2d2d2d;
-  --bg-tooltip: #333;
-  --bg-hover: #2d2d2d;
+  --bg-body: #0d1d27;
+  --bg-sidebar: #10232e;
+  --bg-panel: #142630;
+  --bg-header: #10212b;
+  --bg-card: #172b35;
+  --bg-card-hover: #203842;
+  --bg-selected: #24404b;
+  --bg-meta: #10222c;
+  --bg-input: #1a303b;
+  --bg-tooltip: #27414c;
+  --bg-hover: #213a45;
 
-  --border-light: #303030;
-  --border-normal: #333;
-  --border-divider: #2a2a2a;
+  --border-light: #32454e;
+  --border-normal: #43555c;
+  --border-divider: #2b3f49;
 
-  --text-primary: #e5e5e5;
-  --text-secondary: #999;
-  --text-heading: #eee;
-  --text-muted: #666;
+  --text-primary: #e6ebe7;
+  --text-secondary: #aebbc0;
+  --text-heading: #fff9ec;
+  --text-muted: #879aa1;
 
-  --accent: #818cf8;
-  --accent-light: #1e1b4b;
+  --accent: #e0b35e;
+  --accent-light: #304145;
+  --brand: #e0b35e;
+  --gold: #e0b35e;
 
-  --scrollbar-thumb: #444;
-  --scrollbar-thumb-hover: #666;
+  --scrollbar-thumb: #3b535b;
+  --scrollbar-thumb-hover: #5d747b;
 }
 
 /* ========== 全局样式 ========== */
@@ -68,6 +72,10 @@ html, body, #root {
   color: var(--text-primary);
 }
 
+body { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+button, input, textarea { font: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* 滚动条 */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -77,11 +85,11 @@ html, body, #root {
 /* 拖拽区域 */
 .drag-overlay {
   position: fixed; inset: 0;
-  background: rgba(99, 102, 241, 0.08);
-  border: 3px dashed #6366f1;
+  background: rgba(18, 109, 130, 0.08);
+  border: 3px dashed var(--accent);
   z-index: 9999;
   display: flex; align-items: center; justify-content: center;
-  font-size: 24px; color: #6366f1;
+  font-size: 24px; color: var(--accent);
   pointer-events: none;
 }
 
@@ -133,11 +141,13 @@ pre code { font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace; fon
   color: var(--accent) !important;
 }
 .ant-tree .ant-tree-treenode {
-  padding: 1px 0;
+  padding: 3px 0;
 }
 .ant-tree .ant-tree-switcher {
   color: var(--text-muted);
 }
+.ant-tree-node-content-wrapper:hover .cat-actions,
+.ant-tree-node-content-wrapper:focus-within .cat-actions { visibility: visible !important; }
 
 /* ========== 面板拖拽调整大小 ========== */
 .panel-resizer {
@@ -148,6 +158,100 @@ pre code { font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace; fon
 .panel-resizer:hover, .panel-resizer:active {
   background: var(--accent);
 }
+.panel-resizer:focus-visible { background: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 周报式排版：细线、宽松的节奏、克制的强调色 */
+.app-topbar { border-top: 3px solid var(--brand); }
+.app-toolbar { display: flex; align-items: center; flex: 1; min-width: 0; gap: 10px; padding: 6px 0; }
+.brand { display: flex; align-items: baseline; gap: 8px; flex: none; border: 0; background: transparent; color: var(--brand); cursor: pointer; padding: 0 6px 0 0; }
+.brand-name { font-family: Georgia, "Songti SC", "SimSun", serif; font-size: 25px; font-weight: 700; letter-spacing: -.06em; line-height: 1; }
+.brand-caption { color: var(--text-muted); font-size: 9px; font-weight: 700; letter-spacing: .16em; }
+.toolbar-divider { width: 1px; height: 22px; flex: none; background: var(--border-normal); margin: 0 2px; }
+.toolbar-search { flex: 1 1 240px; min-width: 150px; max-width: 500px; margin-left: 12px; }
+.toolbar-search .ant-input-search { border-radius: 5px; }
+.toolbar-search .ant-input-affix-wrapper { background: var(--bg-input); border-color: var(--border-light); }
+.toolbar-actions { flex-shrink: 0; margin-left: auto; }
+.app-toolbar .ant-btn:not(.ant-btn-primary) { box-shadow: none; }
+.app-toolbar .toolbar-create { box-shadow: none; font-weight: 600; }
+.app-toolbar .ant-btn-group .ant-btn-primary { box-shadow: none; }
+.app-sidebar { box-shadow: inset -1px 0 var(--border-light); }
+.sidebar-scroll { padding: 24px 14px !important; }
+.sidebar-heading, .list-title { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.sidebar-heading { padding: 0 10px 18px; border-bottom: 1px solid var(--border-light); margin-bottom: 14px; }
+.sidebar-heading span, .list-title span, .preview-eyebrow { color: var(--brand); font-size: 10px; font-weight: 700; letter-spacing: .13em; }
+.sidebar-heading strong, .list-title strong { color: var(--text-heading); font-size: 18px; font-weight: 600; letter-spacing: -.035em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-star { border-radius: 4px; }
+.sidebar-content .ant-collapse { margin-top: 14px; }
+.sidebar-content .ant-collapse-header { padding: 13px 9px !important; border-top: 1px solid var(--border-light); font-size: 12px; font-weight: 600; color: var(--text-secondary) !important; }
+.sidebar-content .ant-collapse-content-box { padding: 3px 2px 17px !important; }
+.sidebar-content .ant-tree-node-content-wrapper { border-radius: 4px; }
+.sidebar-content .ant-tree-title { font-size: 13px; }
+.sidebar-content .ant-btn-dashed { border-style: solid; background: transparent; color: var(--text-secondary); border-color: var(--border-normal); }
+.sidebar-tag { border-radius: 3px; background: var(--bg-panel); color: var(--text-secondary); border-color: var(--border-normal); padding: 2px 7px; }
+.sidebar-tag.selected { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+.list-header { min-height: 78px; }
+.item-scroll { padding: 12px !important; }
+.item-card { border: 1px solid var(--border-light) !important; border-left: 3px solid transparent !important; border-radius: 4px !important; box-shadow: none !important; }
+.item-card:hover, .item-row:hover { background: var(--bg-card-hover) !important; }
+.item-card.selected { border-left-color: var(--accent) !important; }
+.item-card .ant-card-body { padding: 14px !important; }
+.item-card .ant-typography, .item-row .ant-typography { color: var(--text-primary); }
+.item-card .ant-tag { background: transparent; color: var(--text-secondary); border-color: var(--border-normal); border-radius: 2px; }
+.item-star { color: var(--gold); font-size: 12px; margin-right: 2px; }
+.item-rows { margin: -12px; }
+.item-row { min-height: 64px; border-left: 3px solid transparent; transition: background .15s ease; }
+.item-row.selected { border-left-color: var(--accent); }
+.preview-empty { background: var(--bg-panel); text-align: center; padding: 32px; }
+.preview-empty-inner { max-width: 350px; }
+.preview-empty-mark { margin: 26px auto; width: 88px; height: 88px; border: 1px solid var(--border-normal); border-radius: 50%; display: grid; place-items: center; font-family: Georgia, "Songti SC", "SimSun", serif; font-size: 42px; color: var(--brand); }
+.preview-empty h2 { font-family: Georgia, "Songti SC", "SimSun", serif; color: var(--text-heading); font-size: 25px; font-weight: 600; margin-bottom: 10px; }
+.preview-empty p { color: var(--text-secondary); line-height: 1.7; }
+.preview-header { min-height: 88px; }
+.preview-header .preview-title { font-family: Georgia, "Songti SC", "SimSun", serif; color: var(--text-heading); font-size: 20px; letter-spacing: -.02em; margin: 5px 0 8px !important; }
+.preview-header .ant-tag { margin: 0; border-radius: 2px; background: transparent; color: var(--text-secondary); border-color: var(--border-normal); }
+.preview-panel > div:nth-child(2) > .preview-content { max-width: 860px; margin: 0 auto; }
+.preview-content h1, .preview-content h2 { font-family: Georgia, "Songti SC", "SimSun", serif; }
+.preview-content h1 { font-size: 1.85em; letter-spacing: -.025em; }
+.preview-content h2 { font-size: 1.4em; border-bottom: 1px solid var(--border-light); padding-bottom: .4em; }
+.preview-content a { color: var(--accent); }
+.preview-content pre { background: var(--bg-meta); border: 1px solid var(--border-light); padding: 16px; border-radius: 4px; }
+.preview-content code:not(pre code) { color: var(--brand); background: var(--bg-meta); border-radius: 2px; padding: 1px 4px; }
+.metadata-footer { padding: 10px 24px !important; }
+.metadata-footer > div { gap: 8px 22px !important; }
+.metadata-footer span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.vim-indicator { color: var(--text-muted); }
+.preview-actions { margin-left: auto; justify-content: flex-end; }
+.preview-panel { container-type: inline-size; }
+.preview-header { flex-wrap: wrap; }
+@media (max-width: 1220px) {
+  .toolbar-action-label { display: none; }
+  .app-toolbar { gap: 6px; }
+  .app-toolbar .ant-btn { padding-inline: 8px; }
+  .brand-caption { display: none; }
+  .toolbar-search { margin-left: 0; }
+}
+@media (max-width: 900px) { .app-topbar { padding-inline: 10px !important; } .toolbar-divider, .vim-indicator { display: none !important; } }
+@container (max-width: 620px) {
+  .preview-header { align-items: flex-start !important; }
+  .preview-actions { width: 100%; justify-content: flex-start; margin-left: 0; }
+  .preview-panel > div:nth-child(2) { padding: 22px !important; }
+  .preview-content h1 { font-size: 1.55em; }
+}
+
+textarea { background: var(--bg-input); color: var(--text-primary); }
+.preview-content { overflow-wrap: anywhere; }
+.preview-content pre, .preview-content table { max-width: 100%; overflow-x: auto; }
+
+.welcome-screen { min-height: 100vh; display: grid; place-items: center; padding: 32px; background: var(--bg-body); border-top: 5px solid var(--brand); }
+.welcome-card { width: min(100%, 520px); padding: 58px 54px; background: var(--bg-panel); border: 1px solid var(--border-light); border-radius: 4px; box-shadow: 0 24px 64px rgba(16, 33, 43, 0.06); text-align: left; }
+.welcome-mark { width: 62px; height: 62px; margin: 0 0 32px; display: grid; place-items: center; color: var(--brand); font-family: Georgia, "Songti SC", "SimSun", serif; font-size: 36px; font-weight: 700; border: 1px solid var(--brand); border-radius: 50%; }
+.welcome-eyebrow { color: var(--brand); font-size: 10px; letter-spacing: .18em; font-weight: 700; }
+.welcome-card h1 { margin: 16px 0 16px; font-family: Georgia, "Songti SC", "SimSun", serif; font-size: 32px; line-height: 1.35; color: var(--text-heading); }
+.welcome-card p { margin: 0 0 32px; max-width: 390px; color: var(--text-secondary); line-height: 1.9; }
+.welcome-card .ant-btn { min-width: 188px; height: 44px; border-radius: 4px; }
+.welcome-loading { margin: 0; animation: welcome-pulse 1.6s ease-in-out infinite; }
+@keyframes welcome-pulse { 50% { opacity: .6; transform: scale(.94); } }
+@media (prefers-reduced-motion: reduce) { .welcome-loading { animation: none; } }
 
 /* ========== 条目拖拽排序 ========== */
 .draggable-item {

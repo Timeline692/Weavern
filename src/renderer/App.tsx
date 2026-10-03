@@ -2,7 +2,7 @@
  * 应用根组件 — 可拖拽调整宽度的三栏布局
  */
 import React, { useEffect, useCallback, useState, useRef } from 'react';
-import { Result, Button, Spin, Modal } from 'antd';
+import { Button, Modal, Alert } from 'antd';
 import { FolderOpenOutlined } from '@ant-design/icons';
 import { useStore } from './store';
 import { Sidebar } from './components/Sidebar';
@@ -19,20 +19,30 @@ const DEFAULT_MID = 300;
 const MIN_PANEL = 180;
 const MAX_LEFT = 450;
 const MAX_MID = 550;
+const MIN_PREVIEW = 320;
+const savedWidth = (key: string, fallback: number, max: number) => {
+  const value = Number(localStorage.getItem(key));
+  return Number.isFinite(value) && value >= MIN_PANEL ? Math.min(value, max) : fallback;
+};
 
 export default function App() {
   const { kbReady, kbConfig, setKbConfig, setKbReady, setCategories, setItems, setTags,
     sidebarCollapsed, readingMode, globalLoading, setGlobalLoading,
     setAutoStartEnabled } = useStore();
   const [initError, setInitError] = useState<string | null>(null);
-  const [hasExistingConfig, setHasExistingConfig] = useState(false);
+  const [initializing, setInitializing] = useState(true);
 
   // 面板宽度
-  const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT);
-  const [midWidth, setMidWidth] = useState(DEFAULT_MID);
+  const [leftWidth, setLeftWidth] = useState(() => savedWidth('weavern:leftWidth', DEFAULT_LEFT, MAX_LEFT));
+  const [midWidth, setMidWidth] = useState(() => savedWidth('weavern:midWidth', DEFAULT_MID, MAX_MID));
+  const leftWidthRef = useRef(leftWidth);
+  const midWidthRef = useRef(midWidth);
   const dragging = useRef<'left' | 'mid' | null>(null);
   const startX = useRef(0);
   const startW = useRef(0);
+
+  useEffect(() => { leftWidthRef.current = leftWidth; localStorage.setItem('weavern:leftWidth', String(leftWidth)); }, [leftWidth]);
+  useEffect(() => { midWidthRef.current = midWidth; localStorage.setItem('weavern:midWidth', String(midWidth)); }, [midWidth]);
 
   // 拖拽调整面板宽度
   const handleResizeStart = useCallback((which: 'left' | 'mid') => (e: React.MouseEvent) => {
@@ -49,9 +59,9 @@ export default function App() {
       if (!dragging.current) return;
       const delta = e.clientX - startX.current;
       if (dragging.current === 'left') {
-        setLeftWidth(Math.min(MAX_LEFT, Math.max(MIN_PANEL, startW.current + delta)));
+        setLeftWidth(Math.min(MAX_LEFT, window.innerWidth - midWidthRef.current - MIN_PREVIEW - 12, Math.max(MIN_PANEL, startW.current + delta)));
       } else {
-        setMidWidth(Math.min(MAX_MID, Math.max(MIN_PANEL, startW.current + delta)));
+        setMidWidth(Math.min(MAX_MID, window.innerWidth - (useStore.getState().sidebarCollapsed ? 0 : leftWidthRef.current) - MIN_PREVIEW - 12, Math.max(MIN_PANEL, startW.current + delta)));
       }
     };
     const onUp = () => {
@@ -61,37 +71,50 @@ export default function App() {
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    const onResize = () => {
+      setLeftWidth(width => Math.min(width, Math.max(MIN_PANEL, window.innerWidth - midWidthRef.current - MIN_PREVIEW - 12)));
+      setMidWidth(width => Math.min(width, Math.max(MIN_PANEL, window.innerWidth - leftWidthRef.current - MIN_PREVIEW - 12)));
+    };
+    window.addEventListener('resize', onResize);
+    onResize();
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('resize', onResize);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
     };
   }, []);
 
-  // 启动时检测是否有已有知识库（不自动加载）
+  // 启动时：有已有知识库则直接进入，否则显示欢迎页
   useEffect(() => {
+    if (!window.electronAPI) {
+      setInitError('请通过 Electron 桌面应用打开织识。');
+      setInitializing(false);
+      return;
+    }
     (async () => {
       try {
         const config = await window.electronAPI.kbGetConfig();
         if (config) {
-          setHasExistingConfig(true);
           setKbConfig(config);
+          setKbReady(true);
+          // 异步加载数据（不阻塞 UI）
+          const [categories, items, tags] = await Promise.all([
+            window.electronAPI.categoryList(),
+            window.electronAPI.itemList(),
+            window.electronAPI.tagList(),
+          ]);
+          setCategories(categories);
+          setItems(items);
+          setTags(tags);
         }
-      } catch (err) { console.error('Failed to load config:', err); }
+      } catch (err: any) { setInitError(err.message || '无法打开知识库'); }
+      finally { setInitializing(false); }
     })();
   }, []);
 
-  // 进入已有知识库
-  const handleEnterKb = useCallback(async () => {
-    try {
-      const config = await window.electronAPI.kbGetConfig();
-      if (config) {
-        setKbConfig(config);
-        setKbReady(true);
-        await loadData();
-      }
-    } catch (err: any) { setInitError(err.message || '无法加载知识库'); }
-  }, []);
-
+  // 首次选择知识库文件夹
   const handleInitKb = useCallback(async () => {
     try {
       setGlobalLoading(true);
@@ -100,6 +123,7 @@ export default function App() {
       const config = await window.electronAPI.kbInit(folderPath);
       setKbConfig(config);
       setKbReady(true);
+      setInitError(null);
       await loadData();
     } catch (err: any) { setInitError(err.message || '初始化失败'); }
     finally { setGlobalLoading(false); }
@@ -122,14 +146,15 @@ export default function App() {
   // 加载开机自启动状态
   useEffect(() => {
     (async () => {
-      const enabled = await window.electronAPI.appGetAutoStart();
-      setAutoStartEnabled(enabled);
+      try { setAutoStartEnabled(await window.electronAPI.appGetAutoStart()); }
+      catch { setAutoStartEnabled(false); }
     })();
   }, []);
 
   // 导入完成
   useEffect(() => {
-    window.electronAPI.onImportComplete(async () => {
+    if (!window.electronAPI) return;
+    return window.electronAPI.onImportComplete(async () => {
       const items = await window.electronAPI.itemList();
       setItems(items);
     });
@@ -146,7 +171,7 @@ export default function App() {
         useStore.getState().setNewFileModalOpen(true);
         return;
       }
-      if (e.ctrlKey && e.key === 's' && !isInput) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent('kb:save'));
         return;
@@ -162,7 +187,7 @@ export default function App() {
             okType: 'danger',
             cancelText: '取消',
             onOk: async () => {
-              await window.electronAPI.itemDelete(state.selectedItemId);
+              await window.electronAPI.itemDelete(state.selectedItemId!);
               state.setSelectedItemId(null);
               const items = await window.electronAPI.itemList();
               state.setItems(items);
@@ -182,51 +207,30 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // 未初始化 — 欢迎屏幕
+  // 未初始化 — 首次使用欢迎屏幕
   if (!kbReady) {
+    if (initializing) return <div className="welcome-screen"><div className="welcome-mark welcome-loading" aria-label="正在打开知识库">织</div></div>;
     return (
-      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-        {hasExistingConfig ? (
-          /* 有已有知识库：显示进入按钮 + 小字重新选择 */
-          <div style={{ textAlign: 'center' }}>
-            <FolderOpenOutlined style={{ color: '#fff', fontSize: 72, display: 'block', marginBottom: 24 }} />
-            <div style={{ color: '#fff', fontSize: 24, marginBottom: 8, fontWeight: 600 }}>织识</div>
-            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, marginBottom: 32 }}>
-              知识库：{kbConfig?.name || ''}
-            </div>
-            <Button type="primary" size="large"
-              onClick={handleEnterKb} loading={globalLoading}
-              style={{ minWidth: 180, height: 44, fontSize: 16 }}>
-              进入知识库
-            </Button>
-            <div style={{ marginTop: 20 }}>
-              <Button type="link" size="small"
-                onClick={handleInitKb}
-                style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-                重新选择知识库文件夹
-              </Button>
-            </div>
-          </div>
-        ) : (
-          /* 首次使用：选择文件夹 */
-          <Result icon={<FolderOpenOutlined style={{ color: '#fff', fontSize: 72 }} />}
-            title={<span style={{ color: '#fff', fontSize: 24 }}>织识</span>}
-            subTitle={<span style={{ color: 'rgba(255,255,255,0.8)' }}>选择一个文件夹作为知识库根目录</span>}
-            extra={<Button type="primary" size="large" onClick={handleInitKb} loading={globalLoading}>选择知识库文件夹</Button>}
-          />
-        )}
+      <div className="welcome-screen">
+        <div className="welcome-card">
+          <div className="welcome-mark" aria-hidden="true">织</div>
+          <div className="welcome-eyebrow">WEAVERN · LOCAL KNOWLEDGE</div>
+          <h1>让知识，各归其位。</h1>
+          <p>选择一个文件夹开始使用织识。文档、图片、视频与笔记都会保存在你自己的知识库中。</p>
+          <Button type="primary" size="large" icon={<FolderOpenOutlined />} onClick={handleInitKb} loading={globalLoading} disabled={!window.electronAPI}>选择知识库文件夹</Button>
+          {initError && <Alert style={{ marginTop: 20, textAlign: 'left' }} type="error" showIcon message={initError} />}
+        </div>
       </div>
     );
   }
 
   return (
-    <DragDropOverlay onImportComplete={loadData}>
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-body)' }}>
+    <DragDropOverlay>
+      <div className="app-shell" style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-body)' }}>
         {/* 顶部工具栏 */}
-        <div style={{
-          height: 48, lineHeight: '48px', background: 'var(--bg-header)',
-          borderBottom: '1px solid var(--border-light)', padding: '0 12px',
+        <div className="app-topbar" style={{
+          minHeight: 64, background: 'var(--bg-header)',
+          borderBottom: '1px solid var(--border-light)', padding: '0 20px',
           display: 'flex', alignItems: 'center', flexShrink: 0,
         }}>
           <Toolbar onDataChange={loadData} />
@@ -238,7 +242,7 @@ export default function App() {
           {/* 左侧边栏 */}
           {!readingMode && (
             <>
-              <div style={{
+              <div className="app-sidebar" style={{
                 width: sidebarCollapsed ? 0 : leftWidth,
                 minWidth: sidebarCollapsed ? 0 : MIN_PANEL,
                 background: 'var(--bg-sidebar)',
@@ -258,7 +262,7 @@ export default function App() {
           {/* 中间条目列表 */}
           {!readingMode && (
             <>
-              <div style={{
+              <div className="app-list" style={{
                 width: midWidth, minWidth: MIN_PANEL,
                 background: 'var(--bg-panel)',
                 borderRight: '1px solid var(--border-light)',
@@ -272,7 +276,7 @@ export default function App() {
           )}
 
           {/* 右侧预览面板 */}
-          <div style={{ flex: 1, overflow: 'hidden', background: 'var(--bg-panel)' }}>
+          <div className="app-preview" style={{ flex: 1, minWidth: MIN_PREVIEW, overflow: 'hidden', background: 'var(--bg-panel)' }}>
             <PreviewPanel onDataChange={loadData} />
           </div>
         </div>

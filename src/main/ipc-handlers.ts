@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuid } from 'uuid';
 import {
-  initDatabase, closeDatabase, setKnowledgeBaseRoot, ensureMediaDir,
+  initDatabase, setKnowledgeBaseRoot, ensureMediaDir,
   getCategories, createCategory, renameCategory, deleteCategory, moveCategory,
   getItems, getItem, createItem, updateItem, deleteItem,
   getTags, createTag, deleteTag, addTagToItem, removeTagFromItem, getTagsForItem,
@@ -15,8 +15,9 @@ import {
   getAnnotations, createAnnotation, deleteAnnotation,
   getMediaPath, getKnowledgeBaseRoot,
   toggleStar, getStarredItems, batchDeleteItems, batchCategorize, batchTag,
+  reorderItems,
 } from './database';
-import { importFiles, importFromClipboardText, importFromClipboardImage, getFileType, isTextType, localizeHtmlImages } from './file-manager';
+import { importFiles, importFromClipboardText, importFromClipboardImage, getFileType, isTextType, localizeHtmlImages, detectUrlTitle, importUrl } from './file-manager';
 import type { KnowledgeBaseConfig, FileContent } from '../shared/types';
 
 let mainWindow: BrowserWindow | null = null;
@@ -27,25 +28,52 @@ export function setMainWindow(win: BrowserWindow): void {
 
 /** 注册所有 IPC 处理器 */
 export function registerIpcHandlers(): void {
+  // 持久化 KB 路径到 userData
+  const kbLocationFile = path.join(app.getPath('userData'), 'kb-location.json');
+
+  function saveKbLocation(kbPath: string): void {
+    fs.writeFileSync(kbLocationFile, JSON.stringify({ path: kbPath }));
+  }
+
+  function loadKbLocation(): string | null {
+    try {
+      if (fs.existsSync(kbLocationFile)) {
+        const data = JSON.parse(fs.readFileSync(kbLocationFile, 'utf-8'));
+        if (data.path && fs.existsSync(data.path)) return data.path;
+      }
+    } catch { /* 文件损坏则忽略 */ }
+    return null;
+  }
+
   // ========== 知识库 ==========
   ipcMain.handle('kb:init', async (_event, folderPath: string) => {
+    if (typeof folderPath !== 'string' || !fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
+      throw new Error('知识库文件夹不存在');
+    }
     const name = path.basename(folderPath);
-    setKnowledgeBaseRoot(folderPath);
     await initDatabase(folderPath);
+    setKnowledgeBaseRoot(folderPath);
+    const configPath = path.join(folderPath, '.kbconfig');
+    let previous: Partial<KnowledgeBaseConfig> = {};
+    try { previous = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch { /* 首次创建 */ }
     const config: KnowledgeBaseConfig = {
       rootPath: folderPath,
       name,
-      created_at: new Date().toISOString(),
+      created_at: previous.created_at || new Date().toISOString(),
     };
-    // 保存配置到 .kbconfig
-    fs.writeFileSync(
-      path.join(folderPath, '.kbconfig'),
-      JSON.stringify(config, null, 2)
-    );
+    // 保存配置到 KB 文件夹和 userData
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    saveKbLocation(folderPath);
     return config;
   });
 
   ipcMain.handle('kb:get-config', async () => {
+    // 先从 userData 恢复上次的 KB 路径
+    const savedPath = loadKbLocation();
+    if (savedPath) {
+      await initDatabase(savedPath);
+      setKnowledgeBaseRoot(savedPath);
+    }
     const root = getKnowledgeBaseRoot();
     if (!root) return null;
     const configPath = path.join(root, '.kbconfig');
@@ -99,12 +127,13 @@ export function registerIpcHandlers(): void {
         content.type = 'text';
         content.textContent = '(docx 解析失败，请用系统默认应用打开)';
       }
-    } else if (['jpg', 'png', 'gif', 'webp'].includes(item.file_type)) {
+    } else if (['jpg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(item.file_type)) {
       content.type = 'image';
-    } else if (['mp4', 'mov', 'mkv'].includes(item.file_type)) {
+    } else if (['mp4', 'mov', 'mkv', 'webm'].includes(item.file_type)) {
       content.type = 'video';
       content.mimeType = item.file_type === 'mov' ? 'video/quicktime' :
                          item.file_type === 'mkv' ? 'video/x-matroska' :
+                         item.file_type === 'webm' ? 'video/webm' :
                          'video/mp4';
     } else if (item.file_type === 'pdf') {
       content.type = 'pdf';
@@ -115,7 +144,7 @@ export function registerIpcHandlers(): void {
 
   // ========== 文件导入 ==========
   ipcMain.handle('import:files', async (_e, filePaths: string[]) => {
-    const items = importFiles(filePaths);
+    const items = await importFiles(filePaths);
     const results = items.map(data => ({
       success: true,
       item: createItem(data),
@@ -136,6 +165,26 @@ export function registerIpcHandlers(): void {
     const item = createItem(itemData);
     if (mainWindow) mainWindow.webContents.send('import:complete', [{ success: true, item }]);
     return { success: true, item };
+  });
+
+  // ========== URL 导入 ==========
+  ipcMain.handle('import:url-detect', async (_e, url: string) => {
+    try {
+      return await detectUrlTitle(url);
+    } catch (err: any) {
+      return { title: url, url, error: err.message };
+    }
+  });
+
+  ipcMain.handle('import:url', async (_e, url: string, title?: string) => {
+    try {
+      const data = await importUrl(url, title);
+      const item = createItem(data);
+      if (mainWindow) mainWindow.webContents.send('import:complete', [{ success: true, item }]);
+      return { success: true, item };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   });
 
   // ========== 标签 ==========
@@ -166,6 +215,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('item:batch-delete', async (_e, ids: string[]) => { batchDeleteItems(ids); });
   ipcMain.handle('item:batch-categorize', async (_e, ids: string[], categoryId: string | null) => { batchCategorize(ids, categoryId); });
   ipcMain.handle('item:batch-tag', async (_e, ids: string[], tagId: string) => { batchTag(ids, tagId); });
+  ipcMain.handle('item:reorder', async (_e, ids: string[]) => { reorderItems(ids); });
 
   // ========== HTML 图片本地化 ==========
   ipcMain.handle('import:localize-images', async (_e, itemId: string, baseUrl: string) => {
@@ -199,7 +249,7 @@ export function registerIpcHandlers(): void {
       properties: ['openFile', 'multiSelections'],
       title: '选择要导入的文件',
       filters: [
-        { name: '所有支持的文件', extensions: ['txt', 'md', 'html', 'htm', 'docx', 'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'mkv'] },
+        { name: '所有支持的文件', extensions: ['txt', 'md', 'html', 'htm', 'docx', 'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'mp4', 'mov', 'mkv', 'webm'] },
         { name: '所有文件', extensions: ['*'] },
       ],
     });
@@ -223,16 +273,21 @@ export function registerIpcHandlers(): void {
     getMediaPath(relativePath));
 
   ipcMain.handle('shell:open-path', async (_e, filePath: string) => {
+    const mediaRoot = path.resolve(getKnowledgeBaseRoot(), '_media');
+    const target = path.resolve(filePath);
+    if (!target.startsWith(mediaRoot + path.sep)) throw new Error('只能打开知识库内的文件');
     return shell.openPath(filePath);
   });
 
   // ========== 开机自启动 ==========
   ipcMain.handle('app:get-auto-start', async () => {
-    return app.getLoginItemSettings().openAtLogin;
+    if (process.platform === 'linux') return false;
+    try { return app.getLoginItemSettings().openAtLogin; } catch { return false; }
   });
   ipcMain.handle('app:set-auto-start', async (_e, enabled: boolean) => {
+    if (process.platform === 'linux') return false;
     app.setLoginItemSettings({ openAtLogin: enabled });
-    return enabled;
+    return app.getLoginItemSettings().openAtLogin;
   });
 
   // ========== 新建文件 ==========

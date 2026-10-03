@@ -2,7 +2,7 @@
  * 中间条目列表 — 支持排序、批量操作
  */
 import React, { useMemo, useCallback, useState } from 'react';
-import { List, Card, Empty, Tag as AntTag, Typography, Dropdown, Button, Tooltip, Checkbox, Select, Space, message, Modal } from 'antd';
+import { Card, Empty, Tag as AntTag, Typography, Dropdown, Button, Tooltip, Checkbox, Select, Space, message, Modal } from 'antd';
 import {
   FileTextOutlined, FileImageOutlined, VideoCameraOutlined,
   FilePdfOutlined, FileOutlined, MoreOutlined,
@@ -27,9 +27,12 @@ const FILE_ICONS: Record<string, React.ReactNode> = {
   png: <FileImageOutlined style={{ color: '#10b981' }} />,
   gif: <FileImageOutlined style={{ color: '#8b5cf6' }} />,
   webp: <FileImageOutlined style={{ color: '#10b981' }} />,
+  bmp: <FileImageOutlined style={{ color: '#10b981' }} />,
+  svg: <FileImageOutlined style={{ color: '#10b981' }} />,
   mp4: <VideoCameraOutlined style={{ color: '#f97316' }} />,
   mov: <VideoCameraOutlined style={{ color: '#f97316' }} />,
   mkv: <VideoCameraOutlined style={{ color: '#f97316' }} />,
+  webm: <VideoCameraOutlined style={{ color: '#f97316' }} />,
 };
 
 function fmtSize(b: number) { return b < 1024 ? `${b}B` : b < 1048576 ? `${(b/1024).toFixed(1)}KB` : `${(b/1048576).toFixed(1)}MB`; }
@@ -38,6 +41,7 @@ function fmtDate(s: string) { return new Date(s).toLocaleDateString('zh-CN', { m
 function sortItems(items: Item[], sort: ItemSort): Item[] {
   const copy = [...items];
   switch (sort) {
+    case 'manual': return copy.sort((a,b) => a.sort_order - b.sort_order);
     case 'name': return copy.sort((a,b) => a.title.localeCompare(b.title, 'zh'));
     case 'date': return copy.sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     case 'size': return copy.sort((a,b) => b.size - a.size);
@@ -51,7 +55,7 @@ export function ItemList({ onDataChange }: Props) {
     items: allItems, selectedItemId, setSelectedItemId,
     selectedCategoryId, selectedTagId,
     searchResults, searchQuery,
-    tags, setSelectedTagId,
+    tags, categories,
     viewMode, itemSort, setItemSort,
     batchMode, toggleBatchMode, selectedItemIds, toggleItemSelection,
     selectAllItems, clearSelection,
@@ -63,25 +67,29 @@ export function ItemList({ onDataChange }: Props) {
   const [dragOver, setDragOver] = useState<string | null>(null);
   // 本地排序覆盖（用户拖拽后）
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+  const [tagItems, setTagItems] = useState<Item[] | null>(null);
 
   // 计算显示条目
   const displayItems = useMemo(() => {
     let list: Item[];
     if (searchResults !== null) { list = searchResults.map(r => r.item); }
-    else if (selectedTagId) { list = allItems; }
+    else if (selectedTagId) { list = tagItems ?? []; }
     else if (selectedCategoryId) { list = allItems.filter(i => i.category_id === selectedCategoryId); }
     else { list = allItems; }
 
     if (starredFilter) { list = list.filter(i => (i as any).is_starred); }
     return sortItems(list, itemSort);
-  }, [allItems, searchResults, selectedCategoryId, selectedTagId, itemSort, starredFilter]);
+  }, [allItems, tagItems, searchResults, selectedCategoryId, selectedTagId, itemSort, starredFilter]);
 
   // 标签筛选
   React.useEffect(() => {
-    if (selectedTagId) {
-      window.electronAPI.searchByTag(selectedTagId).then(items => useStore.getState().setItems(items));
-    }
-  }, [selectedTagId]);
+    let active = true;
+    setTagItems(null);
+    if (selectedTagId) window.electronAPI.searchByTag(selectedTagId)
+      .then(items => { if (active) setTagItems(items); })
+      .catch(() => { if (active) { setTagItems([]); message.error('标签筛选失败'); } });
+    return () => { active = false; };
+  }, [selectedTagId, allItems]);
 
   // ========== 操作 ==========
 
@@ -123,7 +131,7 @@ export function ItemList({ onDataChange }: Props) {
     setDragOver(null);
   }, []);
 
-  const handleDrop = useCallback((targetId: string) => (e: React.DragEvent) => {
+  const handleDrop = useCallback((targetId: string) => async (e: React.DragEvent) => {
     e.preventDefault();
     const srcId = e.dataTransfer.getData('text/plain');
     if (!srcId || srcId === targetId) { setDragSrc(null); setDragOver(null); return; }
@@ -139,7 +147,13 @@ export function ItemList({ onDataChange }: Props) {
     setLocalOrder(next);
     setDragSrc(null);
     setDragOver(null);
-  }, [displayItems, localOrder]);
+    try {
+      await window.electronAPI.itemReorder(next);
+      setItemSort('manual');
+      await onDataChange();
+      setLocalOrder(null);
+    } catch (error) { setLocalOrder(null); message.error('排序保存失败'); }
+  }, [displayItems, localOrder, setItemSort, onDataChange]);
 
   const handleDragEnd = useCallback(() => {
     setDragSrc(null);
@@ -192,23 +206,25 @@ export function ItemList({ onDataChange }: Props) {
 
   // ========== 标题 ==========
 
-  const titleText = searchResults !== null ? `搜索 (${displayItems.length})`
-    : selectedTagId ? `标签 (${displayItems.length})`
-    : starredFilter ? `星标 (${displayItems.length})`
-    : `条目 (${displayItems.length})`;
+  const titleText = searchResults !== null ? '搜索结果'
+    : selectedTagId ? '标签条目'
+    : starredFilter ? '星标条目'
+    : selectedCategoryId ? categories.find(c => c.id === selectedCategoryId)?.name || '分类条目'
+    : '全部条目';
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="item-list" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* 标题栏 */}
-      <div style={{
-        padding: '8px 12px', borderBottom: '1px solid var(--border-light)',
+      <div className="list-header" style={{
+        padding: '18px 18px 16px', borderBottom: '1px solid var(--border-light)',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
       }}>
-        <Text strong style={{ fontSize: 13, whiteSpace: 'nowrap' }}>{titleText}</Text>
+        <div className="list-title"><span>CONTENTS · {String(displayItems.length).padStart(2, '0')}</span><strong title={titleText}>{titleText}</strong></div>
         <Space size={4}>
           <Select size="small" value={itemSort} onChange={(v: ItemSort) => setItemSort(v)}
             style={{ width: 80 }} options={[
               { value: 'updated', label: '最近' },
+              { value: 'manual', label: '自定义' },
               { value: 'name', label: '名称' },
               { value: 'date', label: '日期' },
               { value: 'size', label: '大小' },
@@ -226,7 +242,7 @@ export function ItemList({ onDataChange }: Props) {
       {batchMode && displayItems.length > 0 && (
         <div style={{ padding: '4px 12px', background: 'var(--accent-light)', borderBottom: '1px solid var(--border-normal)',
           display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Button size="small" onClick={selectAllItems}>全选</Button>
+          <Button size="small" onClick={() => selectAllItems(displayItems.map(item => item.id))}>全选</Button>
           <Text type="secondary" style={{ fontSize: 12 }}>已选 {selectedItemIds.size}</Text>
           <Button size="small" danger icon={<DeleteOutlined />} onClick={handleBatchDelete}>删除</Button>
           <Select size="small" placeholder="移动分类" style={{ width: 100 }} allowClear
@@ -241,7 +257,7 @@ export function ItemList({ onDataChange }: Props) {
       )}
 
       {/* 条目列表 */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
+      <div className="item-scroll" style={{ flex: 1, overflow: 'auto', padding: 12 }}>
         {orderedItems.length === 0 ? (
           <Empty description="暂无条目" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginTop: 60 }} />
         ) : viewMode === 'card' ? (
@@ -251,17 +267,14 @@ export function ItemList({ onDataChange }: Props) {
             const starred = (item as any).is_starred;
             return (
               <Card key={item.id} size="small" hoverable
-                className={`draggable-item${dragOver === item.id ? ' drag-over' : ''}${dragSrc === item.id ? ' dragging' : ''}`}
+                className={`draggable-item item-card${isSel ? ' selected' : ''}${dragOver === item.id ? ' drag-over' : ''}${dragSrc === item.id ? ' dragging' : ''}`}
                 draggable={!batchMode}
                 onDragStart={batchMode ? undefined : handleDragStart(item.id)}
                 onDragOver={batchMode ? undefined : handleDragOver(item.id)}
                 onDragLeave={batchMode ? undefined : handleDragLeave}
                 onDrop={batchMode ? undefined : handleDrop(item.id)}
                 onDragEnd={batchMode ? undefined : handleDragEnd}
-                style={{
-                  marginBottom: 8, border: isSel ? '2px solid #6366f1' : '1px solid var(--border-light)',
-                  background: isSel ? 'var(--bg-selected)' : 'var(--bg-card)',
-                }}
+                style={{ marginBottom: 8, background: isSel ? 'var(--bg-selected)' : 'var(--bg-card)' }}
                 onClick={() => batchMode ? toggleItemSelection(item.id) : setSelectedItemId(item.id)}
                 bodyStyle={{ padding: 10 }}
               >
@@ -270,14 +283,17 @@ export function ItemList({ onDataChange }: Props) {
                   <div style={{ fontSize: 18 }}>{FILE_ICONS[item.file_type] || <FileOutlined />}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text strong ellipsis style={{ maxWidth: 130 }}>{starred ? '⭐ ' : ''}{item.title}</Text>
+                      <Text strong ellipsis style={{ minWidth: 0, maxWidth: 'calc(100% - 32px)' }}>{Boolean(starred) && <StarFilled className="item-star" />}{starred ? ' ' : ''}{item.title}</Text>
                       {!batchMode && (
                         <Dropdown menu={{ items: [
-                          { key: 'move', label: '移动到分类...', icon: <FolderOpenOutlined /> },
+                          { key: 'move', label: '移动到分类', icon: <FolderOpenOutlined />, children: [
+                            { key: 'uncategorized', label: '未分类', onClick: () => handleMoveToCategory(item, null) },
+                            ...categories.map(cat => ({ key: cat.id, label: cat.name, onClick: () => handleMoveToCategory(item, cat.id) })),
+                          ] },
                           { type: 'divider' },
                           { key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true, onClick: () => handleDeleteItem(item) },
                         ]}} trigger={['click']}>
-                          <Button type="text" size="small" icon={<MoreOutlined />} onClick={e => e.stopPropagation()} />
+                          <Button type="text" size="small" aria-label={`更多操作：${item.title}`} icon={<MoreOutlined />} onClick={e => e.stopPropagation()} />
                         </Dropdown>
                       )}
                     </div>
@@ -292,14 +308,14 @@ export function ItemList({ onDataChange }: Props) {
             );
           })
         ) : (
-          <div style={{ margin: -8 }}>
+          <div className="item-rows">
             {orderedItems.map(item => {
               const isSel = selectedItemId === item.id;
               const isChecked = selectedItemIds.has(item.id);
               const starred = (item as any).is_starred;
               return (
                 <div key={item.id}
-                  className={`draggable-item${dragOver === item.id ? ' drag-over' : ''}${dragSrc === item.id ? ' dragging' : ''}`}
+                  className={`draggable-item item-row${isSel ? ' selected' : ''}${dragOver === item.id ? ' drag-over' : ''}${dragSrc === item.id ? ' dragging' : ''}`}
                   draggable={!batchMode}
                   onDragStart={batchMode ? undefined : handleDragStart(item.id)}
                   onDragOver={batchMode ? undefined : handleDragOver(item.id)}
@@ -315,10 +331,22 @@ export function ItemList({ onDataChange }: Props) {
                   {batchMode && <Checkbox checked={isChecked} />}
                   <span style={{ fontSize: 16 }}>{FILE_ICONS[item.file_type] || <FileOutlined />}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <Text ellipsis>{starred ? '⭐ ' : ''}{item.title}</Text>
+                    <Text ellipsis>{Boolean(starred) && <StarFilled className="item-star" />}{starred ? ' ' : ''}{item.title}</Text>
                     <div><Text type="secondary" style={{ fontSize: 11 }}>{item.file_type} · {fmtSize(item.size)}</Text></div>
                   </div>
                   <Text type="secondary" style={{ fontSize: 11 }}>{fmtDate(item.created_at)}</Text>
+                  {!batchMode && (
+                    <Dropdown menu={{ items: [
+                      { key: 'move', label: '移动到分类', icon: <FolderOpenOutlined />, children: [
+                        { key: 'uncategorized', label: '未分类', onClick: () => handleMoveToCategory(item, null) },
+                        ...categories.map(cat => ({ key: cat.id, label: cat.name, onClick: () => handleMoveToCategory(item, cat.id) })),
+                      ] },
+                      { type: 'divider' },
+                      { key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true, onClick: () => handleDeleteItem(item) },
+                    ] }} trigger={['click']}>
+                      <Button type="text" size="small" aria-label={`更多操作：${item.title}`} icon={<MoreOutlined />} onClick={e => e.stopPropagation()} />
+                    </Dropdown>
+                  )}
                 </div>
               );
             })}

@@ -12,10 +12,30 @@ import {
   StarFilled, StarOutlined, DownloadOutlined, InfoCircleOutlined,
 } from '@ant-design/icons';
 import { useStore } from '../store';
-import type { Annotation, FileContent } from '../../shared/types';
+import type { Annotation, FileContent, Tag } from '../../shared/types';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 const { Text, Title } = Typography;
+
+function safeHtml(html: string): string {
+  return DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed', 'style'],
+    FORBID_ATTR: ['style', 'srcset'],
+  });
+}
+
+function fileUrl(filePath?: string): string {
+  if (!filePath) return '';
+  const normalized = filePath.replace(/\\/g, '/');
+  if (normalized.startsWith('//')) {
+    const [host, ...segments] = normalized.slice(2).split('/');
+    return `file://${host}/${segments.map(encodeURIComponent).join('/')}`;
+  }
+  const encoded = normalized.split('/').map((part, index) => index === 0 && /^[A-Za-z]:$/.test(part) ? part : encodeURIComponent(part)).join('/');
+  return /^[A-Za-z]:\//.test(normalized) ? `file:///${encoded}` : `file://${encoded}`;
+}
 
 interface Props {
   onDataChange: () => void;
@@ -113,16 +133,20 @@ export function PreviewPanel({ onDataChange }: Props) {
 
   const [content, setContent] = useState<FileContent | null>(null);
   const [loading, setLoading] = useState(false);
-  const [itemTags, setItemTags] = useState<AntTag[]>([]);
+  const [itemTags, setItemTags] = useState<Tag[]>([]);
   const [showTagEditor, setShowTagEditor] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [videoRef, setVideoRef] = useState<HTMLVideoElement | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const loadRequest = useRef(0);
 
   // 编辑模式状态
   const [editMode, setEditMode] = useState(false);
   const [editingContent, setEditingContent] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // 内嵌浏览器模式（仅 source_type === 'url' 时可用）
+  const [browserMode, setBrowserMode] = useState(false);
 
   // 选中文本弹窗状态
   const [selectionToolbar, setSelectionToolbar] = useState<{
@@ -145,7 +169,8 @@ export function PreviewPanel({ onDataChange }: Props) {
 
   // 加载条目内容
   const loadContent = useCallback(async () => {
-    if (!selectedItemId) { setContent(null); return; }
+    const request = ++loadRequest.current;
+    if (!selectedItemId) { setContent(null); setItemTags([]); setAnnotations([]); return; }
     setLoading(true);
     try {
       const [cont, tgs, anns] = await Promise.all([
@@ -153,20 +178,25 @@ export function PreviewPanel({ onDataChange }: Props) {
         window.electronAPI.tagGetForItem(selectedItemId),
         window.electronAPI.annotationList(selectedItemId),
       ]);
+      if (request !== loadRequest.current) return;
       setContent(cont);
       setItemTags(tgs);
       setAnnotations(anns);
-      if (editMode && cont?.textContent) {
-        setEditingContent(cont.textContent);
-      }
     } catch (err) {
+      if (request === loadRequest.current) { setContent(null); message.error('文件内容加载失败'); }
       console.error('Failed to load content:', err);
     } finally {
-      setLoading(false);
+      if (request === loadRequest.current) setLoading(false);
     }
-  }, [selectedItemId, editMode]);
+  }, [selectedItemId]);
 
-  useEffect(() => { loadContent(); }, [selectedItemId]);
+  useEffect(() => {
+    loadContent();
+    setBrowserMode(false);
+    setEditMode(false);
+    setSelectionToolbar({ visible: false, x: 0, y: 0, selectedText: '' });
+    return () => { loadRequest.current++; };
+  }, [selectedItemId]);
 
   // ========== 文本选择处理 ==========
 
@@ -300,7 +330,7 @@ export function PreviewPanel({ onDataChange }: Props) {
   const handleToggleEdit = useCallback(() => {
     if (!editMode) {
       // 进入编辑模式
-      setEditingContent(content?.textContent || '');
+      setEditingContent(content?.textContent ?? content?.htmlContent ?? '');
       setEditMode(true);
     } else {
       // 退出编辑模式
@@ -331,7 +361,7 @@ export function PreviewPanel({ onDataChange }: Props) {
 
   const handleCancelEdit = useCallback(() => {
     setEditMode(false);
-    setEditingContent(content?.textContent || '');
+    setEditingContent(content?.textContent ?? content?.htmlContent ?? '');
   }, [content]);
 
   // ========== 标签管理 ==========
@@ -442,25 +472,31 @@ export function PreviewPanel({ onDataChange }: Props) {
 
   if (!selectedItem) {
     return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Empty description="选择一个条目以预览" />
+      <div className="preview-empty" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="preview-empty-inner">
+          <span className="preview-eyebrow">YOUR READING SPACE</span>
+          <div className="preview-empty-mark" aria-hidden="true">织</div>
+          <h2>让知识在这里展开</h2>
+          <p>从左侧选择一个条目，开始阅读与整理。</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div ref={previewRef} className={readingMode ? 'reading-mode' : ''}
+    <div ref={previewRef} className={`preview-panel${readingMode ? ' reading-mode' : ''}`}
       style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
     >
       {/* 标题栏 */}
-      <div style={{
-        padding: '8px 16px', borderBottom: '1px solid var(--border-light)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      <div className="preview-header" style={{
+        padding: '16px 24px', borderBottom: '1px solid var(--border-light)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
       }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Title level={5} style={{ margin: 0 }} ellipsis>{selectedItem.title}</Title>
+          <div className="preview-eyebrow">DOCUMENT / {selectedItem.file_type.toUpperCase()}</div>
+          <Title level={4} className="preview-title" style={{ margin: 0 }} ellipsis>{selectedItem.title}</Title>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-            <AntTag color="blue">{selectedItem.file_type.toUpperCase()}</AntTag>
+            <AntTag>{selectedItem.file_type.toUpperCase()}</AntTag>
             {itemTags.map((tag: any) => (
               <AntTag key={tag.id} closable onClose={() => handleRemoveTag(tag.id)}>{tag.name}</AntTag>
             ))}
@@ -470,7 +506,7 @@ export function PreviewPanel({ onDataChange }: Props) {
             </Tooltip>
           </div>
         </div>
-        <Space>
+        <Space wrap size={4} className="preview-actions">
           {/* 字体控制 */}
           <Tooltip title="缩小字号">
             <Button type="text" size="small" icon={<ZoomOutOutlined />}
@@ -495,7 +531,7 @@ export function PreviewPanel({ onDataChange }: Props) {
               { value: 'monospace', label: '等宽' },
             ]}
           />
-          <span style={{ color: '#e5e7eb', margin: '0 2px' }}>|</span>
+          <span style={{ color: 'var(--border-normal)', margin: '0 2px' }}>|</span>
 
           {isEdited && <AntTag color="orange" style={{ margin: 0, fontSize: 10 }}>已编辑</AntTag>}
           {isEditable && (
@@ -523,6 +559,14 @@ export function PreviewPanel({ onDataChange }: Props) {
               <Button type="text" size="small" icon={<DownloadOutlined />} onClick={handleLocalizeImages} />
             </Tooltip>
           )}
+          {selectedItem?.original_url && (
+            <Tooltip title={browserMode ? '返回内容预览' : '在应用内打开原网页'}>
+              <Button type={browserMode ? 'primary' : 'text'} size="small"
+                onClick={() => setBrowserMode(!browserMode)}>
+                {browserMode ? '退出浏览' : '🌐 原网页'}
+              </Button>
+            </Tooltip>
+          )}
           <Tooltip title={readingMode ? '退出阅读模式' : '阅读模式'}>
             <Button type="text" size="small"
               icon={readingMode ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
@@ -534,7 +578,7 @@ export function PreviewPanel({ onDataChange }: Props) {
 
       {/* 内容预览区 */}
       <div style={{
-        flex: 1, overflow: 'auto', padding: readingMode ? 32 : 16,
+        flex: 1, overflow: 'auto', padding: readingMode ? 40 : 32,
         fontSize: `${fontSize}px`,
         fontFamily: fontFamily === 'default' ? undefined : fontFamily,
       }}
@@ -544,6 +588,11 @@ export function PreviewPanel({ onDataChange }: Props) {
       >
         {loading ? (
           <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
+        ) : browserMode && selectedItem?.original_url ? (
+          <webview
+            src={selectedItem.original_url}
+            style={{ width: '100%', height: '100%', border: 'none', borderRadius: 8 }}
+          />
         ) : editMode ? (
           selectedItem.file_type === 'md' ? (
             /* Markdown 分屏：左编辑，右实时预览 */
@@ -579,7 +628,7 @@ export function PreviewPanel({ onDataChange }: Props) {
                 }}
                   className="preview-content"
                   dangerouslySetInnerHTML={{
-                    __html: (() => { try { return marked.parse(editingContent) as string; } catch { return '<p>渲染错误</p>'; } })()
+                    __html: (() => { try { return safeHtml(marked.parse(editingContent) as string); } catch { return '<p>渲染错误</p>'; } })()
                   }}
                 />
               </div>
@@ -679,16 +728,16 @@ export function PreviewPanel({ onDataChange }: Props) {
 
       {/* 元数据面板 */}
       {selectedItem && (
-        <div style={{
+        <div className="metadata-footer" style={{
           borderTop: '1px solid var(--border-light)', padding: '8px 16px',
           background: 'var(--bg-meta, #fafafa)', fontSize: 12,
         }}>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', color: 'var(--text-secondary)' }}>
-            <span>📏 {selectedItem.size < 1024 ? `${selectedItem.size}B` : selectedItem.size < 1048576 ? `${(selectedItem.size/1024).toFixed(1)}KB` : `${(selectedItem.size/1048576).toFixed(1)}MB`}</span>
-            <span>📅 创建: {new Date(selectedItem.created_at).toLocaleString('zh-CN')}</span>
-            <span>🕐 修改: {new Date(selectedItem.updated_at).toLocaleString('zh-CN')}</span>
-            {selectedItem.original_url && <span>🔗 {selectedItem.original_url}</span>}
-            <span>📁 {selectedItem.file_path}</span>
+            <span>大小 · {selectedItem.size < 1024 ? `${selectedItem.size}B` : selectedItem.size < 1048576 ? `${(selectedItem.size/1024).toFixed(1)}KB` : `${(selectedItem.size/1048576).toFixed(1)}MB`}</span>
+            <span>创建 · {new Date(selectedItem.created_at).toLocaleString('zh-CN')}</span>
+            <span>修改 · {new Date(selectedItem.updated_at).toLocaleString('zh-CN')}</span>
+            {selectedItem.original_url && <span>来源 · {selectedItem.original_url}</span>}
+            <span>位置 · {selectedItem.file_path}</span>
           </div>
         </div>
       )}
@@ -726,35 +775,32 @@ function RenderContent({
     case 'html':
       return (
         <div className="preview-content"
-          dangerouslySetInnerHTML={{ __html: content.htmlContent || '' }}
+          dangerouslySetInnerHTML={{ __html: safeHtml(content.htmlContent || '') }}
           style={{ maxWidth: '100%', overflow: 'auto' }}
         />
       );
     case 'image':
       return (
         <div style={{ textAlign: 'center' }}>
-          <img src={`file://${content.absolutePath}`} alt="preview"
+          <img src={fileUrl(content.absolutePath)} alt="preview"
             style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain', borderRadius: 8 }} />
         </div>
       );
     case 'video':
       return (
         <div style={{ textAlign: 'center' }}>
-          <video ref={onVideoRef} src={`file://${content.absolutePath}`} controls
+          <video ref={onVideoRef} src={fileUrl(content.absolutePath)} controls
             style={{ maxWidth: '100%', maxHeight: '60vh', borderRadius: 8 }} />
         </div>
       );
-    case 'pdf':
+    case 'pdf': {
       return (
-        <div style={{ textAlign: 'center', padding: 40 }}>
-          <FilePdfOutlined style={{ fontSize: 48, color: '#ef4444' }} />
-          <br /><br />
-          <Button type="primary" icon={<EyeOutlined />}
-            onClick={() => content.absolutePath && window.electronAPI.shellOpenPath(content.absolutePath)}>
-            打开 PDF
-          </Button>
-        </div>
+        <iframe
+          src={fileUrl(content.absolutePath)}
+          style={{ width: '100%', height: 'calc(100vh - 200px)', minHeight: 500, border: 'none', borderRadius: 8 }}
+        />
       );
+    }
     default:
       return <Empty description="此文件类型暂不支持预览" />;
   }
@@ -771,7 +817,7 @@ function TextPreview({ content: text, fileType, annotations }: {
     if (fileType === 'md') {
       try {
         const html = marked.parse(text) as string;
-        return html;
+        return safeHtml(html);
       } catch { /* fallback */ }
     }
     // 纯文本：注入高亮
@@ -800,7 +846,7 @@ function AnnotationPanel({
   onNoteTextChange: (v: string) => void;
   onAddNote: () => void;
   onAddTimestamp?: () => void;
-  onDelete: (ann: Annotation) => void;
+  onDelete: (annId: string) => void;
   onJumpToTimestamp: (seconds: string) => void;
   isVideo: boolean;
 }) {
@@ -843,7 +889,7 @@ function AnnotationPanel({
                 {new Date(ann.created_at).toLocaleString('zh-CN')}
               </Text>
             </div>
-            <Button type="text" size="small" danger onClick={() => onDelete(ann)}>×</Button>
+            <Button type="text" size="small" danger onClick={() => onDelete(ann.id)}>×</Button>
           </div>
         ))}
       </div>

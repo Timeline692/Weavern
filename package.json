@@ -1,23 +1,25 @@
 {
   "name": "weavern",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "织识 (Weavern) - 编织知识，织网识海。纯本地多模态知识库管理工具",
   "main": "dist/main/main/index.js",
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "build": "vite build && tsc -p tsconfig.node.json",
+    "dev": "tsc -p tsconfig.node.json && concurrently \"vite --configLoader runner\" \"tsc -p tsconfig.node.json --watch\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "tsc --noEmit -p tsconfig.json && vite build --configLoader runner && tsc -p tsconfig.node.json",
+    "test:database": "tsc -p tsconfig.node.json && node tests/database-smoke.cjs",
     "package": "npm run build && electron-builder",
-    "lint": "eslint src --ext .ts,.tsx"
+    "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.0",
     "antd": "^5.22.0",
     "cheerio": "^1.0.0",
+    "dompurify": "^3.4.16",
     "flexsearch": "^0.7.43",
     "highlight.js": "^11.10.0",
     "mammoth": "^1.8.0",
     "marked": "^14.1.0",
-    "pdf-parse": "^1.1.1",
+    "pdf-parse": "^2.4.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
@@ -26,7 +28,6 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@types/pdf-parse": "^1.1.4",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/uuid": "^10.0.0",

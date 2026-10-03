@@ -22,7 +22,9 @@ interface ElectronAPI {
   itemGetContent: (id: string) => Promise<any>;
   importFiles: (paths: string[]) => Promise<any[]>;
   importClipboard: (data: any) => Promise<any>;
-  onImportComplete: (callback: (results: any[]) => void) => void;
+  importUrlDetect: (url: string) => Promise<{title: string; url: string; error?: string}>;
+  importUrl: (url: string, title?: string) => Promise<{success: boolean; item?: any; error?: string}>;
+  onImportComplete: (callback: (results: any[]) => void) => () => void;
   tagList: () => Promise<any[]>;
   tagCreate: (name: string) => Promise<any>;
   tagDelete: (id: string) => Promise<void>;
@@ -45,6 +47,7 @@ interface ElectronAPI {
   itemBatchDelete: (ids: string[]) => Promise<void>;
   itemBatchCategorize: (ids: string[], categoryId: string | null) => Promise<void>;
   itemBatchTag: (ids: string[], tagId: string) => Promise<void>;
+  itemReorder: (ids: string[]) => Promise<void>;
   importLocalizeImages: (itemId: string, baseUrl: string) => Promise<{success: boolean; error?: string}>;
   appGetAutoStart: () => Promise<boolean>;
   appSetAutoStart: (enabled: boolean) => Promise<boolean>;
@@ -53,6 +56,25 @@ interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
+  }
+}
+
+// Electron webview 标签
+declare namespace JSX {
+  interface IntrinsicElements {
+    webview: React.DetailedHTMLProps<
+      React.HTMLAttributes<HTMLElement> & {
+        src?: string;
+        nodeintegration?: string;
+        plugins?: string;
+        preload?: string;
+        httpreferrer?: string;
+        useragent?: string;
+        allowpopups?: string;
+        partition?: string;
+      },
+      HTMLElement
+    >;
   }
 }
 

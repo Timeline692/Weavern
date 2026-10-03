@@ -19,9 +19,13 @@ function Root() {
       theme={{
         algorithm: darkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
-          colorPrimary: '#6366f1',
-          borderRadius: 6,
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+          colorPrimary: darkMode ? '#e0b35e' : '#126d82',
+          colorText: darkMode ? '#edf1ed' : '#172b35',
+          colorTextSecondary: darkMode ? '#aebbc0' : '#60717a',
+          colorBgContainer: darkMode ? '#152630' : '#faf8f4',
+          colorBorder: darkMode ? '#344650' : '#d9d8d1',
+          borderRadius: 5,
+          fontFamily: '"Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
         },
       }}
     >

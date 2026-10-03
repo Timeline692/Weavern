@@ -112,30 +112,22 @@ export function Sidebar({ onDataChange }: Props) {
     } catch (err) { console.error(err); }
   }, [newTagName, onDataChange]);
 
-  const handleDeleteTag = useCallback(async (tag: Tag) => {
-    await window.electronAPI.tagDelete(tag.id);
-    if (selectedTagId === tag.id) setSelectedTagId(null);
-    onDataChange();
+  const handleDeleteTag = useCallback((tag: Tag) => {
+    Modal.confirm({
+      title: '删除标签',
+      content: `确定删除“${tag.name}”吗？条目不会被删除。`,
+      okText: '删除', okType: 'danger', cancelText: '取消',
+      onOk: async () => {
+        await window.electronAPI.tagDelete(tag.id);
+        if (selectedTagId === tag.id) setSelectedTagId(null);
+        onDataChange();
+      },
+    });
   }, [selectedTagId, onDataChange]);
 
   // ========== 碰撞面板组件 ==========
 
   const panelItems = [
-    {
-      key: 'starred',
-      label: '星标',
-      children: (
-        <div style={{
-          padding: '6px 8px', cursor: 'pointer', borderRadius: 6,
-          background: starredFilter ? '#fef3c7' : 'transparent',
-          fontWeight: starredFilter ? 600 : 400,
-        }} onClick={() => setStarredFilter(!starredFilter)}>
-          <StarOutlined style={{ color: '#f59e0b', marginRight: 8 }} />
-          {starredFilter ? '⭐ 星标条目 (已筛选)' : '星标条目'}
-        </div>
-      ),
-      extra: <StarOutlined style={{ color: '#f59e0b' }} />,
-    },
     {
       key: 'categories',
       label: '分类目录',
@@ -143,9 +135,9 @@ export function Sidebar({ onDataChange }: Props) {
         <div>
           <Tree
             treeData={treeData}
-            selectedKeys={selectedCategoryId ? [selectedCategoryId] : ['__all__']}
+            selectedKeys={starredFilter || selectedTagId ? [] : selectedCategoryId ? [selectedCategoryId] : ['__all__']}
             onSelect={(keys) => {
-              const key = keys[0] as string;
+              const key = (keys[0] || '__all__') as string;
               setSelectedCategoryId(key === '__all__' ? null : key);
             }}
             defaultExpandAll
@@ -184,7 +176,7 @@ export function Sidebar({ onDataChange }: Props) {
             {tags.map(tag => (
               <AntTag
                 key={tag.id}
-                color={selectedTagId === tag.id ? 'purple' : 'default'}
+                className={selectedTagId === tag.id ? 'sidebar-tag selected' : 'sidebar-tag'}
                 style={{ cursor: 'pointer', margin: 0 }}
                 closable
                 onClose={(e) => { e.preventDefault(); handleDeleteTag(tag); }}
@@ -221,8 +213,14 @@ export function Sidebar({ onDataChange }: Props) {
   // ========== 重命名分类弹窗 ==========
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
+    <div className="sidebar-content" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="sidebar-scroll" style={{ flex: 1, overflow: 'auto', padding: 8 }}>
+        <div className="sidebar-heading"><span>LIBRARY</span><strong>知识库</strong></div>
+        <Button className="sidebar-star" type="text" block icon={<StarOutlined style={{ color: 'var(--gold)' }} />}
+          onClick={() => setStarredFilter(!starredFilter)}
+          style={{ textAlign: 'left', height: 36, background: starredFilter ? 'var(--accent-light)' : 'transparent', color: starredFilter ? 'var(--accent)' : 'var(--text-primary)', fontWeight: starredFilter ? 600 : 400 }}>
+          星标条目
+        </Button>
         <Collapse
           defaultActiveKey={['categories', 'tags']}
           ghost

@@ -2,21 +2,21 @@
  * 顶部工具栏
  * 全局搜索框 + 导入/新建/视图切换
  */
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Input, Button, Space, Dropdown, Modal, Radio, message, Tooltip, Switch, Tabs } from 'antd';
 import {
-  SearchOutlined, ImportOutlined, PlusOutlined,
+  SearchOutlined, ImportOutlined,
   AppstoreOutlined, UnorderedListOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined,
   CloseOutlined, HistoryOutlined, FileAddOutlined,
-  SunOutlined, MoonOutlined,
+  SunOutlined, MoonOutlined, LinkOutlined, FolderOpenOutlined,
 } from '@ant-design/icons';
 import { useStore } from '../store';
 
 const { Search } = Input;
 
 interface Props {
-  onDataChange: () => void;
+  onDataChange: () => Promise<void>;
 }
 
 export function Toolbar({ onDataChange }: Props) {
@@ -24,18 +24,28 @@ export function Toolbar({ onDataChange }: Props) {
     viewMode, setViewMode, sidebarCollapsed, setSidebarCollapsed,
     searchQuery, setSearchQuery, setSearchResults,
     searchHistory, clearSearchHistory, addSearchHistory,
-    setSelectedCategoryId, setSelectedTagId,
+    setSelectedCategoryId, setSelectedTagId, setStarredFilter,
     selectedCategoryId, categories, darkMode, toggleDarkMode,
     newFileModalOpen, setNewFileModalOpen,
-    autoStartEnabled, setAutoStartEnabled,
+    autoStartEnabled, setAutoStartEnabled, setKbConfig, resetKnowledgeBaseView,
   } = useStore();
   const [searching, setSearching] = useState(false);
+  const searchRequest = useRef(0);
 
   // 新建文件弹窗
   const [newFileTitle, setNewFileTitle] = useState('');
   const [newFileType, setNewFileType] = useState<'txt' | 'md'>('md');
   const [creating, setCreating] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+
+  // URL 导入弹窗
+  const [urlModalOpen, setUrlModalOpen] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [urlDetectedTitle, setUrlDetectedTitle] = useState('');
+  const [urlCustomTitle, setUrlCustomTitle] = useState('');
+  const [urlDetecting, setUrlDetecting] = useState(false);
+  const [urlImporting, setUrlImporting] = useState(false);
+  const [switchingKb, setSwitchingKb] = useState(false);
 
   // Vim ? 触发关于弹窗
   useEffect(() => {
@@ -47,27 +57,29 @@ export function Toolbar({ onDataChange }: Props) {
   // 执行搜索
   const handleSearch = useCallback(async (value: string) => {
     const q = value.trim();
-    setSearchQuery(q);
-    if (!q) { setSearchResults(null); return; }
+    const request = ++searchRequest.current;
+    if (!q) { setSearchQuery(''); setSearchResults(null); return; }
     setSearching(true);
     addSearchHistory(q);
     setSelectedCategoryId(null);
     setSelectedTagId(null);
+    setStarredFilter(false);
+    setSearchQuery(q);
     try {
       const results = await window.electronAPI.searchQuery(q);
-      setSearchResults(results);
-    } catch (err) { console.error('Search failed:', err); }
-    finally { setSearching(false); }
+      if (request === searchRequest.current) setSearchResults(results);
+    } catch (err) { if (request === searchRequest.current) message.error('搜索失败'); console.error('Search failed:', err); }
+    finally { if (request === searchRequest.current) setSearching(false); }
   }, []);
 
   // 导入文件
   const handleImport = useCallback(async () => {
     const paths = await window.electronAPI.dialogOpenFiles();
     if (paths.length > 0) {
-      await window.electronAPI.importFiles(paths);
-      onDataChange();
+      try { await window.electronAPI.importFiles(paths); }
+      catch (err: any) { message.error('导入失败：' + err.message); }
     }
-  }, [onDataChange]);
+  }, []);
 
   // 新建文件
   const handleCreateFile = useCallback(async () => {
@@ -91,22 +103,79 @@ export function Toolbar({ onDataChange }: Props) {
     }
   }, [newFileTitle, newFileType, selectedCategoryId, onDataChange]);
 
+  // URL 检测
+  const handleUrlDetect = useCallback(async () => {
+    const u = urlInput.trim();
+    if (!u) return;
+    setUrlDetecting(true);
+    try {
+      const result = await window.electronAPI.importUrlDetect(u);
+      if (result.error) { message.error('无法访问该链接: ' + result.error); }
+      else {
+        setUrlDetectedTitle(result.title);
+        setUrlCustomTitle(result.title);
+      }
+    } catch (err: any) { message.error('检测失败: ' + err.message); }
+    finally { setUrlDetecting(false); }
+  }, [urlInput]);
+
+  // URL 导入
+  const handleUrlImport = useCallback(async () => {
+    const u = urlInput.trim();
+    if (!u) return;
+    setUrlImporting(true);
+    try {
+      const result = await window.electronAPI.importUrl(u, urlCustomTitle || urlDetectedTitle || undefined);
+      if (result.success) {
+        message.success(`已导入：${result.item.title}`);
+        setUrlModalOpen(false);
+        setUrlInput('');
+        setUrlDetectedTitle('');
+        setUrlCustomTitle('');
+      } else {
+        message.error('导入失败: ' + (result.error || '未知错误'));
+      }
+    } catch (err: any) { message.error('导入失败: ' + err.message); }
+    finally { setUrlImporting(false); }
+  }, [urlInput, urlCustomTitle, urlDetectedTitle]);
+
+  // 切换知识库
+  const handleSwitchKb = useCallback(async () => {
+    const folderPath = await window.electronAPI.dialogOpenFolder();
+    if (!folderPath) return;
+    setSwitchingKb(true);
+    try {
+      searchRequest.current++;
+      setSearching(false);
+      const config = await window.electronAPI.kbInit(folderPath);
+      resetKnowledgeBaseView();
+      setKbConfig(config);
+      await onDataChange();
+      message.success(`已切换到 ${config.name}`);
+    } catch (err: any) { message.error('切换知识库失败：' + err.message); }
+    finally { setSwitchingKb(false); }
+  }, [onDataChange, resetKnowledgeBaseView, setKbConfig]);
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 12 }}>
-      <Button type="text"
-        icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-      />
+    <div className="app-toolbar">
+      <button type="button" className="brand" onClick={() => setAboutOpen(true)} aria-label="关于织识">
+        <span className="brand-name">织识</span>
+        <span className="brand-caption">WEAVERN</span>
+      </button>
+      <span className="toolbar-divider" aria-hidden="true" />
+      <Tooltip title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}>
+        <Button type="text" aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
+          icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)} />
+      </Tooltip>
+      <Tooltip title="切换知识库文件夹">
+        <Button type="text" aria-label="切换知识库文件夹" icon={<FolderOpenOutlined />} onClick={handleSwitchKb} loading={switchingKb} />
+      </Tooltip>
 
-      <span onClick={() => setAboutOpen(true)}
-        style={{ fontWeight: 700, fontSize: 16, whiteSpace: 'nowrap', marginRight: 8, cursor: 'pointer', userSelect: 'none' }}>
-        🧶 织识
-      </span>
-
-      <div style={{ flex: 1, maxWidth: 480 }}>
-        <Search placeholder="全文搜索..." allowClear
+      <div className="toolbar-search">
+        <Search placeholder="搜索知识库中的内容" allowClear
           value={searchQuery}
-          onChange={(e) => { setSearchQuery(e.target.value); if (!e.target.value) setSearchResults(null); }}
+          onChange={(e) => { searchRequest.current++; setSearching(false); setSearchQuery(e.target.value); setSearchResults(null); }}
           onSearch={handleSearch} loading={searching}
           prefix={<SearchOutlined style={{ color: 'var(--text-muted)' }} />}
           suffix={
@@ -125,23 +194,55 @@ export function Toolbar({ onDataChange }: Props) {
         />
       </div>
 
-      <Space>
-        <Button icon={<ImportOutlined />} onClick={handleImport}>导入文件</Button>
-        <Button icon={<FileAddOutlined />} onClick={() => setNewFileModalOpen(true)}>新建文件</Button>
+      <Space className="toolbar-actions">
+        <Dropdown menu={{ items: [
+          { key: 'file', label: '导入文件', icon: <ImportOutlined />, onClick: handleImport },
+          { key: 'url', label: '导入网页', icon: <LinkOutlined />, onClick: () => setUrlModalOpen(true) },
+        ] }} trigger={['click']}>
+          <Button aria-label="导入内容" icon={<ImportOutlined />}><span className="toolbar-action-label">导入</span></Button>
+        </Dropdown>
+        <Button className="toolbar-create" type="primary" aria-label="新建文件" icon={<FileAddOutlined />} onClick={() => setNewFileModalOpen(true)}><span className="toolbar-action-label">新建</span></Button>
 
         <Tooltip title={darkMode ? '浅色模式' : '暗色模式'}>
-          <Button type="text" icon={darkMode ? <SunOutlined /> : <MoonOutlined />} onClick={toggleDarkMode} />
+          <Button type="text" aria-label={darkMode ? '浅色模式' : '暗色模式'} icon={darkMode ? <SunOutlined /> : <MoonOutlined />} onClick={toggleDarkMode} />
         </Tooltip>
 
         <Button.Group>
-          <Button icon={<AppstoreOutlined />}
+          <Button aria-label="卡片视图" icon={<AppstoreOutlined />}
             type={viewMode === 'card' ? 'primary' : 'default'}
             onClick={() => setViewMode('card')} />
-          <Button icon={<UnorderedListOutlined />}
+          <Button aria-label="列表视图" icon={<UnorderedListOutlined />}
             type={viewMode === 'list' ? 'primary' : 'default'}
             onClick={() => setViewMode('list')} />
         </Button.Group>
       </Space>
+
+      {/* URL 导入弹窗 */}
+      <Modal title="导入网页" open={urlModalOpen}
+        onOk={handleUrlImport} onCancel={() => {
+          setUrlModalOpen(false); setUrlInput(''); setUrlDetectedTitle(''); setUrlCustomTitle('');
+        }}
+        okText="导入" cancelText="取消"
+        confirmLoading={urlImporting}
+        okButtonProps={{ disabled: !urlInput.trim() || !urlDetectedTitle && !urlCustomTitle }}
+      >
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>网页链接</label>
+          <Input.Search placeholder="https://..." value={urlInput}
+            onChange={(e) => { setUrlInput(e.target.value); setUrlDetectedTitle(''); setUrlCustomTitle(''); }}
+            onSearch={handleUrlDetect} enterButton="检测" loading={urlDetecting}
+            onPressEnter={handleUrlDetect}
+            autoFocus />
+        </div>
+        {urlDetectedTitle && (
+          <div>
+            <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>条目名称</label>
+            <Input placeholder="输入名称..." value={urlCustomTitle}
+              onChange={(e) => setUrlCustomTitle(e.target.value)}
+              onPressEnter={handleUrlImport} />
+          </div>
+        )}
+      </Modal>
 
       {/* 帮助弹窗 */}
       <Modal title={null} open={aboutOpen} onCancel={() => setAboutOpen(false)}
@@ -162,7 +263,7 @@ export function Toolbar({ onDataChange }: Props) {
               children: (
                 <div style={{ textAlign: 'center', padding: '8px 0' }}>
                   <div style={{ fontSize: 40, marginBottom: 8 }}>Weavern</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4, color: '#6366f1' }}>织识</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4, color: 'var(--brand)' }}>织识</div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 2, maxWidth: 320, margin: '0 auto' }}>
                     编织知识，织网识海<br />
                     纯本地的多模态知识库管理工具。<br />
@@ -174,12 +275,16 @@ export function Toolbar({ onDataChange }: Props) {
                       <span style={{ fontSize: 13 }}>开机自启动</span>
                       <Switch size="small" checked={autoStartEnabled}
                         onChange={async (v) => {
-                          setAutoStartEnabled(v);
-                          await window.electronAPI.appSetAutoStart(v);
+                          try {
+                            const applied = await window.electronAPI.appSetAutoStart(v);
+                            setAutoStartEnabled(applied);
+                            if (applied !== v) message.info('当前系统不支持此开机自启设置');
+                          }
+                          catch { message.error('开机自启设置失败'); }
                         }} />
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      v1.0.0 · Electron + React + TypeScript<br />
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      v1.2.0 · Electron + React + TypeScript<br />
                       MIT License
                     </div>
                   </div>

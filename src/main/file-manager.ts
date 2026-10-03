@@ -13,12 +13,12 @@ import { ensureMediaDir, getMediaPath, getKnowledgeBaseRoot } from './database';
 const EXT_MAP: Record<string, FileType> = {
   '.txt': 'txt', '.md': 'md', '.markdown': 'md',
   '.html': 'html', '.htm': 'html',
-  '.docx': 'docx', '.doc': 'docx',
+  '.docx': 'docx',
   '.pdf': 'pdf',
   '.jpg': 'jpg', '.jpeg': 'jpg', '.png': 'png',
-  '.gif': 'gif', '.webp': 'webp', '.bmp': 'jpg', '.svg': 'jpg',
+  '.gif': 'gif', '.webp': 'webp', '.bmp': 'bmp', '.svg': 'svg',
   '.mp4': 'mp4', '.mov': 'mov', '.mkv': 'mkv',
-  '.avi': 'mp4', '.webm': 'mp4', '.flv': 'mp4',
+  '.webm': 'webm',
 };
 
 /** 根据扩展名判断文件类型 */
@@ -41,7 +41,7 @@ export function generateTitle(filePath: string): string {
 
 // ========== 文件导入 ==========
 
-export function importFile(sourcePath: string, categoryId?: string | null): CreateItemInput {
+export async function importFile(sourcePath: string, categoryId?: string | null): Promise<CreateItemInput> {
   ensureMediaDir();
 
   const fileType = getFileType(sourcePath);
@@ -57,7 +57,7 @@ export function importFile(sourcePath: string, categoryId?: string | null): Crea
   // 提取预览文本
   let previewText = '';
   if (isTextType(fileType)) {
-    previewText = extractText(destPath, fileType);
+    previewText = await extractText(destPath, fileType);
   }
 
   return {
@@ -126,20 +126,26 @@ export function importFromClipboardImage(base64: string, categoryId?: string | n
 // ========== 文本提取 ==========
 
 /** 提取文本内容（同步，各解析器按需加载） */
-function extractText(filePath: string, fileType: FileType): string {
+async function extractText(filePath: string, fileType: FileType): Promise<string> {
   try {
     switch (fileType) {
       case 'txt':
       case 'md':
-        return fs.readFileSync(filePath, 'utf-8');
+        return fs.readFileSync(filePath, 'utf-8').substring(0, 50000);
       case 'html':
         return extractHtmlText(filePath);
       case 'docx':
-        // 延迟加载 mammoth
-        return extractDocxTextSync(filePath);
-      case 'pdf':
-        // 延迟加载 pdf-parse
-        return extractPdfTextSync(filePath);
+        return (await import('mammoth')).extractRawText({ path: filePath }).then(result => result.value.substring(0, 50000));
+      case 'pdf': {
+        const { PDFParse } = await import('pdf-parse');
+        const parser = new PDFParse({ data: new Uint8Array(fs.readFileSync(filePath)) });
+        try {
+          const result = await parser.getText();
+          return result.text.substring(0, 50000);
+        } finally {
+          await parser.destroy();
+        }
+      }
       default:
         return '';
     }
@@ -164,30 +170,6 @@ function extractHtmlText(filePath: string): string {
     .replace(/\s+/g, ' ')
     .trim();
   return text.substring(0, 50000); // 截断，避免超大文件
-}
-
-function extractDocxTextSync(filePath: string): string {
-  try {
-    const mammoth = require('mammoth');
-    // mammoth 是异步的，但我们可以用同步方式尝试
-    // 对于导入场景，用 extractRawText 同步提取
-    const result = mammoth.extractRawText({ path: filePath });
-    return (result.value || '').substring(0, 50000);
-  } catch {
-    return '';
-  }
-}
-
-function extractPdfTextSync(filePath: string): string {
-  try {
-    const pdfParse = require('pdf-parse');
-    const buffer = fs.readFileSync(filePath);
-    // pdf-parse 也是异步的，在导入时同步处理有困难
-    // 存储缓冲区，让 renderer 侧处理
-    return '';
-  } catch {
-    return '';
-  }
 }
 
 // ========== HTML 图片本地化 ==========
@@ -232,10 +214,78 @@ export async function localizeHtmlImages(htmlPath: string, baseUrl: string): Pro
   fs.writeFileSync(htmlPath, $.html());
 }
 
+// ========== URL 导入 ==========
+
+function parsePageUrl(value: string): URL {
+  const url = new URL(value.trim());
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('仅支持 http 和 https 网页链接');
+  return url;
+}
+
+async function fetchPage(value: string): Promise<{ url: string; html: string }> {
+  const url = parsePageUrl(value);
+  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new Error(`网页请求失败（HTTP ${response.status}）`);
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) throw new Error('链接不是 HTML 网页');
+  const declaredSize = Number(response.headers.get('content-length'));
+  if (declaredSize > 5_000_000) throw new Error('网页超过 5 MB，无法导入');
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('网页内容为空');
+  const chunks: Buffer[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > 5_000_000) { await reader.cancel(); throw new Error('网页超过 5 MB，无法导入'); }
+    chunks.push(Buffer.from(value));
+  }
+  const html = Buffer.concat(chunks).toString('utf-8');
+  return { url: response.url, html };
+}
+
+function pageTitle(html: string, fallback: string): string {
+  const cheerio = require('cheerio');
+  return cheerio.load(html)('title').first().text().trim().slice(0, 200) || fallback;
+}
+
+/** 检测 URL 的页面标题（不保存文件） */
+export async function detectUrlTitle(url: string): Promise<{ title: string; url: string }> {
+  const page = await fetchPage(url);
+  return { title: pageTitle(page.html, page.url), url: page.url };
+}
+
+/** 导入 URL：抓取页面 HTML 并保存到 _media */
+export async function importUrl(url: string, customTitle?: string): Promise<CreateItemInput> {
+  ensureMediaDir();
+
+  const page = await fetchPage(url);
+  const { html } = page;
+  const title = customTitle?.trim() || pageTitle(html, page.url);
+
+  const storedName = `${uuid()}.html`;
+  const destPath = getMediaPath(storedName);
+  fs.writeFileSync(destPath, html, 'utf-8');
+
+  const previewText = extractHtmlText(destPath);
+
+  return {
+    title,
+    file_path: storedName,
+    original_url: page.url,
+    source_type: 'url',
+    file_type: 'html',
+    size: Buffer.byteLength(html, 'utf-8'),
+    preview_text: previewText,
+    category_id: null,
+  };
+}
+
 // ========== 批量导入 ==========
 
 /** 批量导入文件/文件夹 */
-export function importFiles(filePaths: string[], categoryId?: string | null): CreateItemInput[] {
+export async function importFiles(filePaths: string[], categoryId?: string | null): Promise<CreateItemInput[]> {
   const results: CreateItemInput[] = [];
 
   for (const fp of filePaths) {
@@ -246,10 +296,10 @@ export function importFiles(filePaths: string[], categoryId?: string | null): Cr
       // 递归扫描文件夹
       const files = scanDirectory(fp);
       for (const f of files) {
-        results.push(importFile(f, categoryId));
+        results.push(await importFile(f, categoryId));
       }
     } else {
-      results.push(importFile(fp, categoryId));
+      results.push(await importFile(fp, categoryId));
     }
   }
 
@@ -260,8 +310,11 @@ export function importFiles(filePaths: string[], categoryId?: string | null): Cr
 function scanDirectory(dirPath: string): string[] {
   const files: string[] = [];
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  const kbRoot = path.resolve(getKnowledgeBaseRoot());
   for (const entry of entries) {
     const fullPath = path.join(dirPath, entry.name);
+    if (path.resolve(dirPath) === kbRoot && ['_media', 'knowledge.db', '.kbconfig'].includes(entry.name)) continue;
+    if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) {
       files.push(...scanDirectory(fullPath));
     } else {
